@@ -3,14 +3,15 @@ import {
   Plus, Trash2, BookOpen, Check, Cloud, CloudOff, 
   Loader2, Pencil, X, Save, CheckCircle2, Clock, LayoutList, Moon, Sun,
   LogOut, Shield, Users, User, Calendar, Timer, Play, Pause, RotateCcw, 
-  Settings, BarChart2, Coffee, Brain, ArrowLeft, Trophy, Download, Medal, Star
+  Settings, BarChart2, Coffee, Brain, ArrowLeft, Trophy, Download, Medal, Star,
+  RefreshCw, UserCheck, UserX
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut 
 } from 'firebase/auth';
 import { 
-  getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection, getDocs, query, orderBy 
+  getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection 
 } from 'firebase/firestore';
 
 // إعدادات Firebase الخاصة بمشروعك الحقيقي
@@ -24,7 +25,7 @@ const firebaseConfig = {
   measurementId: "G-J67PJTJEB5"
 };
 
-// ⚠️ ضع إيميلك الشخصي هنا لكي يعتبرك الموقع "المدير" ويظهر لك لوحة التحكم
+// 👑 المالك الأساسي (Super Admin) - لا يمكن سحب صلاحياته أبداً
 const ADMIN_EMAIL = "ahmed.ragab.alproda@gmail.com"; 
 
 // تهيئة Firebase
@@ -53,7 +54,10 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [currentView, setCurrentView] = useState('tracker'); // 'tracker', 'admin', 'pomodoro', 'leaderboard'
-  const isAdmin = user && user.email === ADMIN_EMAIL;
+  
+  // صلاحيات الإدارة الديناميكية
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   // الحالة الأساسية للمواد والمحاضرات والإحصائيات
   const [subjects, setSubjects] = useState([]);
@@ -228,19 +232,37 @@ export default function App() {
       setUser(currentUser);
       setAuthLoading(false);
 
-      // We don't save public profile blindly here anymore, we save it in saveDataAndSync 
-      // so it always has the updated totalStudyTime. But we can ensure basic info is there.
       if (currentUser && db) {
+        const isOwner = currentUser.email === ADMIN_EMAIL;
+        setIsSuperAdmin(isOwner);
+
+        // جلب وتحديث بيانات المستخدم وصلاحياته
+        const userRef = doc(db, 'artifacts', appId, 'usersList', currentUser.uid);
+        
+        onSnapshot(userRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            // هو أدمن لو كان المالك الأساسي أو لو متحددله دور أدمن
+            setIsAdmin(isOwner || data.role === 'admin');
+          } else {
+            setIsAdmin(isOwner);
+          }
+        });
+
         try {
-          await setDoc(doc(db, 'artifacts', appId, 'usersList', currentUser.uid), {
+          await setDoc(userRef, {
             name: currentUser.displayName || 'بدون اسم',
             email: currentUser.email || 'بدون إيميل',
             photoURL: currentUser.photoURL || '',
             lastLogin: new Date().toISOString()
+            // لا نحدث الـ role هنا لكي لا نمسح صلاحياته القديمة
           }, { merge: true });
         } catch (e) {
           console.error("Error saving basic user info: ", e);
         }
+      } else {
+        setIsAdmin(false);
+        setIsSuperAdmin(false);
       }
     });
 
@@ -269,12 +291,14 @@ export default function App() {
       setActiveSubjectId(null);
       setCurrentView('tracker');
       setIsActive(false);
+      setIsAdmin(false);
+      setIsSuperAdmin(false);
     } catch (error) {
       console.error("Logout Failed", error);
     }
   };
 
-  // 2. جلب البيانات
+  // 2. جلب البيانات والمزامنة المستمرة
   useEffect(() => {
     if (authLoading) return;
     
@@ -391,30 +415,28 @@ export default function App() {
     };
   }, [user, authLoading]);
 
-  // جلب بيانات الإدارة والمنافسة (Leaderboard)
+  // جلب بيانات الإدارة والمنافسة (Leaderboard) بشكل لحظي (Live)
   useEffect(() => {
     if ((currentView === 'admin' && isAdmin) || currentView === 'leaderboard') {
       if (!db) return;
-      const fetchUsers = async () => {
-        setLoadingUsers(true);
-        try {
-          const querySnapshot = await getDocs(collection(db, 'artifacts', appId, 'usersList'));
-          const usersData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          
-          if (currentView === 'leaderboard') {
-            // ترتيب تنازلي حسب ساعات المذاكرة
-            usersData.sort((a, b) => (b.totalStudyTime || 0) - (a.totalStudyTime || 0));
-          } else {
-            // ترتيب حسب آخر ظهور في لوحة الإدارة
-            usersData.sort((a, b) => new Date(b.lastLogin) - new Date(a.lastLogin));
-          }
-          setUsersList(usersData);
-        } catch (error) {
-          console.error("Error fetching users list: ", error);
+      setLoadingUsers(true);
+      
+      const q = collection(db, 'artifacts', appId, 'usersList');
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const usersData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        if (currentView === 'leaderboard') {
+          // ترتيب تنازلي حسب ساعات المذاكرة
+          usersData.sort((a, b) => (b.totalStudyTime || 0) - (a.totalStudyTime || 0));
+        } else {
+          // ترتيب حسب آخر ظهور في لوحة الإدارة
+          usersData.sort((a, b) => new Date(b.lastLogin) - new Date(a.lastLogin));
         }
+        setUsersList(usersData);
         setLoadingUsers(false);
-      };
-      fetchUsers();
+      });
+
+      return () => unsubscribe();
     }
   }, [currentView, isAdmin]);
 
@@ -461,18 +483,46 @@ export default function App() {
     }, 800); 
   };
 
-  // ---------------- حذف مستخدم للمدير ----------------
-  const adminDeleteUser = async (userId, userName) => {
+  // المزامنة اليدوية (زر التحديث)
+  const forceManualSync = () => {
+    setIsSyncing(true);
+    setTimeout(() => setIsSyncing(false), 1000);
+    saveDataAndSync(subjects, stats);
+  };
+
+  // ---------------- إدارة المستخدمين للمدير ----------------
+  const adminDeleteUser = async (userId, userName, userEmail) => {
+    if (userEmail === ADMIN_EMAIL) {
+      alert("لا يمكنك حذف المالك الأساسي للموقع!");
+      return;
+    }
     if (window.confirm(`هل أنت متأكد من حذفك للمستخدم "${userName}" نهائياً من الموقع؟`)) {
       try {
         await deleteDoc(doc(db, 'artifacts', appId, 'usersList', userId));
-        // Optional: delete their tracker data (won't affect their Google Auth but clears app data)
         await deleteDoc(doc(db, 'artifacts', appId, 'users', userId, 'trackerData', 'main'));
-        setUsersList(prev => prev.filter(u => u.id !== userId));
         alert('تم الحذف بنجاح.');
       } catch (error) {
         console.error("Error deleting user: ", error);
         alert('حدث خطأ أثناء الحذف.');
+      }
+    }
+  };
+
+  const toggleAdminRole = async (targetUserId, currentRole, targetEmail) => {
+    if (targetEmail === ADMIN_EMAIL) {
+      alert("هذا هو المالك الأساسي، لا يمكن تغيير صلاحياته!");
+      return;
+    }
+    const newRole = currentRole === 'admin' ? 'user' : 'admin';
+    const actionText = newRole === 'admin' ? 'ترقية إلى أدمن' : 'سحب صلاحيات الأدمن من';
+    
+    if (window.confirm(`هل أنت متأكد من ${actionText} هذا المستخدم؟`)) {
+      try {
+        await setDoc(doc(db, 'artifacts', appId, 'usersList', targetUserId), {
+          role: newRole
+        }, { merge: true });
+      } catch (error) {
+        console.error("Error updating role:", error);
       }
     }
   };
@@ -748,6 +798,26 @@ export default function App() {
               <Download size={18} />
             </button>
 
+            {currentView === 'tracker' && (
+              <div className="flex items-center gap-1">
+                <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm ${darkMode ? 'bg-slate-700' : 'bg-indigo-900/30'}`}>
+                  {isSyncing ? (
+                    <><Loader2 size={14} className={`animate-spin ${darkMode ? 'text-indigo-400' : 'text-indigo-200'}`} /> <span>جاري الحفظ...</span></>
+                  ) : (
+                    <><Cloud size={14} className="text-green-400" /> <span>تم الحفظ</span></>
+                  )}
+                </div>
+                {/* زر المزامنة اليدوي */}
+                <button 
+                  onClick={forceManualSync} 
+                  className={`p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 text-green-400 hover:bg-slate-600' : 'bg-indigo-800/50 text-green-300 hover:bg-indigo-800'}`}
+                  title="مزامنة وتحديث البيانات"
+                >
+                  <RefreshCw size={18} className={isSyncing ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            )}
+
             <button 
               onClick={() => setDarkMode(!darkMode)} 
               className={`p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 text-yellow-300 hover:bg-slate-600' : 'bg-indigo-800/50 text-indigo-100 hover:bg-indigo-800'}`}
@@ -792,7 +862,7 @@ export default function App() {
               </div>
               <div>
                 <h2 className="text-2xl font-bold">لوحة تحكم المدير</h2>
-                <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>أهلاً بك يا مدير، هذه بيانات المسجلين في تطبيقك وإمكانية حذفهم.</p>
+                <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>أهلاً بك يا مدير، يمكنك من هنا إدارة صلاحيات المستخدمين وحذفهم.</p>
               </div>
             </div>
 
@@ -801,6 +871,13 @@ export default function App() {
                 <Users size={32} className="text-indigo-500 mb-2" />
                 <span className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">{usersList.length}</span>
                 <span className={`text-sm font-medium ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>إجمالي الطلاب المسجلين</span>
+              </div>
+              <div className={`p-6 rounded-2xl border flex flex-col items-center justify-center text-center ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-amber-50 border-amber-100'}`}>
+                <Shield size={32} className="text-amber-500 mb-2" />
+                <span className="text-3xl font-bold text-amber-600 dark:text-amber-400">
+                  {usersList.filter(u => u.role === 'admin' || u.email === ADMIN_EMAIL).length}
+                </span>
+                <span className={`text-sm font-medium ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>عدد المديرين (Admins)</span>
               </div>
             </div>
 
@@ -816,12 +893,16 @@ export default function App() {
                       <tr className={`text-sm ${darkMode ? 'bg-slate-700/50 text-slate-300' : 'bg-slate-50 text-slate-600'}`}>
                         <th className="p-4 font-semibold border-b dark:border-slate-700">#</th>
                         <th className="p-4 font-semibold border-b dark:border-slate-700">الطالب</th>
+                        <th className="p-4 font-semibold border-b dark:border-slate-700">الدور</th>
                         <th className="p-4 font-semibold border-b dark:border-slate-700">الإيميل</th>
-                        <th className="p-4 font-semibold border-b dark:border-slate-700 text-center">إجراء</th>
+                        <th className="p-4 font-semibold border-b dark:border-slate-700 text-center">إجراءات</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {usersList.map((adminUser, index) => (
+                      {usersList.map((adminUser, index) => {
+                        const isThisSuperAdmin = adminUser.email === ADMIN_EMAIL;
+                        const isThisAdmin = isThisSuperAdmin || adminUser.role === 'admin';
+                        return (
                         <tr key={adminUser.id} className={`border-b transition duration-300 ${darkMode ? 'border-slate-700 hover:bg-slate-700/50' : 'border-slate-100 hover:bg-slate-50'}`}>
                           <td className="p-4 font-medium text-slate-500">{index + 1}</td>
                           <td className="p-4">
@@ -834,21 +915,39 @@ export default function App() {
                               <span className="font-bold">{adminUser.name}</span>
                             </div>
                           </td>
+                          <td className="p-4">
+                            {isThisSuperAdmin ? (
+                              <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded-lg text-xs font-bold">مالك الموقع</span>
+                            ) : isThisAdmin ? (
+                              <span className="bg-amber-100 text-amber-800 px-2 py-1 rounded-lg text-xs font-bold">أدمن</span>
+                            ) : (
+                              <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-lg text-xs font-bold">مستخدم</span>
+                            )}
+                          </td>
                           <td className="p-4 text-slate-500 dark:text-slate-400 font-mono text-sm" dir="ltr">{adminUser.email}</td>
-                          <td className="p-4 flex justify-center">
-                            <button 
-                              onClick={() => adminDeleteUser(adminUser.id, adminUser.name)}
-                              className="p-2 rounded-lg bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition"
-                              title="حذف المستخدم نهائياً"
-                            >
-                              <Trash2 size={18} />
-                            </button>
+                          <td className="p-4">
+                            <div className="flex justify-center gap-2">
+                              <button 
+                                onClick={() => toggleAdminRole(adminUser.id, adminUser.role, adminUser.email)}
+                                className={`p-2 rounded-lg transition ${isThisAdmin ? 'bg-amber-100 text-amber-700 hover:bg-amber-600 hover:text-white' : 'bg-indigo-100 text-indigo-600 hover:bg-indigo-600 hover:text-white'}`}
+                                title={isThisAdmin ? "سحب صلاحيات الأدمن" : "ترقية إلى أدمن"}
+                              >
+                                {isThisAdmin ? <UserX size={18} /> : <UserCheck size={18} />}
+                              </button>
+                              <button 
+                                onClick={() => adminDeleteUser(adminUser.id, adminUser.name, adminUser.email)}
+                                className="p-2 rounded-lg bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition"
+                                title="حذف المستخدم نهائياً"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
-                      ))}
+                      )})}
                       {usersList.length === 0 && (
                         <tr>
-                          <td colSpan="4" className="text-center p-8 text-slate-500">لم يسجل أحد بعد.</td>
+                          <td colSpan="5" className="text-center p-8 text-slate-500">لم يسجل أحد بعد.</td>
                         </tr>
                       )}
                     </tbody>
