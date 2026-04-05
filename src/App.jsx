@@ -84,10 +84,9 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. جلب البيانات
+  // 2. جلب البيانات وإدارة الاتصال عند سكون المتصفح
   useEffect(() => {
     if (!user || !db) {
-      // لو مفيش اتصال بالسحابة، هنجيب الداتا من المتصفح (Local Storage)
       const localData = localStorage.getItem('tracker_data');
       if (localData) {
         const parsed = JSON.parse(localData);
@@ -102,32 +101,66 @@ export default function App() {
       return;
     }
     
-    // بما أن البيانات شخصية ولا نريد مشاركتها مع الجميع، نحفظها في مسار المستخدم
-    const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'trackerData', 'main');
-    
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists() && docSnap.data().subjects) {
-        const loadedSubjects = docSnap.data().subjects;
-        setSubjects(loadedSubjects);
-        setActiveSubjectId(prev => prev || (loadedSubjects.length > 0 ? loadedSubjects[0].id : null));
-      } else {
-        const defaultSubjects = [{ id: 1, name: 'المادة الأولى (مثال)', lectures: [] }];
-        setSubjects(defaultSubjects);
-        setActiveSubjectId(prev => prev || 1);
-      }
-      setIsLoaded(true);
-    }, (error) => {
-      console.error("Snapshot Error:", error);
-      setIsLoaded(true);
-    });
+    let unsubscribeSnapshot = () => {};
+    let isComponentMounted = true;
 
-    return () => unsubscribe();
+    // دالة للاتصال بقاعدة البيانات
+    const connectToFirebase = () => {
+      if (!isComponentMounted) return;
+      
+      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'trackerData', 'main');
+      
+      unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists() && docSnap.data().subjects) {
+          const loadedSubjects = docSnap.data().subjects;
+          setSubjects(loadedSubjects);
+          
+          // تأمين ذكي لمعرف المادة النشطة حتى لا تظهر شاشة فارغة
+          setActiveSubjectId(prev => {
+            if (prev && loadedSubjects.some(s => s.id === prev)) return prev;
+            return loadedSubjects.length > 0 ? loadedSubjects[0].id : null;
+          });
+        } else {
+          const defaultSubjects = [{ id: 1, name: 'المادة الأولى (مثال)', lectures: [] }];
+          setSubjects(defaultSubjects);
+          setActiveSubjectId(prev => prev || 1);
+        }
+        setIsLoaded(true);
+      }, (error) => {
+        console.error("Connection dropped, reconnecting...", error);
+        // إعادة اتصال صامتة في حالة انقطاع النت أو سكون المتصفح
+        if (isComponentMounted) {
+          setTimeout(() => {
+            unsubscribeSnapshot();
+            connectToFirebase();
+          }, 2500);
+        }
+      });
+    };
+
+    connectToFirebase();
+
+    // مراقبة عودة المستخدم للصفحة لعمل تنشيط فوري للاتصال
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isComponentMounted) {
+        // بمجرد العودة للصفحة، نغلق الاتصال القديم ونفتح واحد جديد فريش
+        unsubscribeSnapshot();
+        connectToFirebase();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      isComponentMounted = false;
+      unsubscribeSnapshot();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [user]);
 
   // تحديث البيانات محلياً ورفعها للسحابة
   const saveSubjectsData = async (newSubjects) => {
     setSubjects(newSubjects);
-    // حفظ احتياطي في المتصفح عشان الداتا متضيعش أبداً
     localStorage.setItem('tracker_data', JSON.stringify(newSubjects));
 
     if (!user || !db) return;
@@ -179,13 +212,21 @@ export default function App() {
   const addLecture = (e) => {
     e.preventDefault();
     if (!newLectureName.trim() || !activeSubjectId) return;
-    const newLecture = {
-      id: Date.now(), name: newLectureName,
+    
+    // فصل المدخلات لتكوين قائمة في حال نسخ عدة أسطر، مع إزالة الـ "-" إن وجدت
+    const lectureNames = newLectureName
+      .split(/[\n,]+/) 
+      .map(name => name.trim().replace(/^-\s*/, ''))
+      .filter(name => name.length > 0);
+
+    const newLectures = lectureNames.map((name, index) => ({
+      id: Date.now() + index, name: name,
       studied: false, listenedRecord: false, transcribed: false,
       createdQuestions: false, solvedOwnQuestions: false, solvedNewQuestions: false,
       reviewCount: 0
-    };
-    saveSubjectsData(subjects.map(sub => sub.id === activeSubjectId ? { ...sub, lectures: [...sub.lectures, newLecture] } : sub));
+    }));
+
+    saveSubjectsData(subjects.map(sub => sub.id === activeSubjectId ? { ...sub, lectures: [...sub.lectures, ...newLectures] } : sub));
     setNewLectureName('');
   };
 
@@ -411,16 +452,22 @@ export default function App() {
                   
                   <div className="flex flex-col sm:flex-row w-full md:w-auto gap-2 shrink-0">
                     <form onSubmit={addLecture} className="flex flex-1 sm:flex-none gap-2">
-                      <input
-                        type="text"
-                        placeholder="اسم المحاضرة..."
-                        className={`flex-1 sm:w-48 lg:w-56 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 transition-colors ${
+                      <textarea
+                        rows={1}
+                        placeholder="الصق قائمة المحاضرات هنا..."
+                        className={`flex-1 sm:w-48 lg:w-64 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 transition-colors resize-none overflow-hidden ${
                           darkMode 
                           ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400 focus:border-indigo-400 focus:ring-indigo-900' 
                           : 'bg-white border-slate-300 text-slate-800 focus:border-indigo-500 focus:ring-indigo-200'
                         }`}
                         value={newLectureName}
                         onChange={(e) => setNewLectureName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            addLecture(e);
+                          }
+                        }}
                       />
                       <button type="submit" className="bg-green-600 text-white px-5 py-2 rounded-xl hover:bg-green-700 transition shadow-sm flex items-center gap-2 font-medium">
                         <Plus size={18} />
@@ -586,7 +633,7 @@ export default function App() {
                   </div>
                   <h3 className={`text-lg font-bold mb-1 ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>لا توجد محاضرات هنا</h3>
                   <p className={`text-sm mb-6 max-w-sm mx-auto ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>ابدأ بإضافة المحاضرات المتراكمة لتتمكن من تنظيم مهامك ومتابعة تقدمك.</p>
-                  <button onClick={() => document.querySelector('input[placeholder="اسم المحاضرة..."]')?.focus()} className={`px-6 py-2 rounded-xl font-medium transition ${darkMode ? 'bg-indigo-900/50 text-indigo-300 hover:bg-indigo-800/80' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}>
+                  <button onClick={() => document.querySelector('textarea[placeholder="الصق قائمة المحاضرات هنا..."]')?.focus()} className={`px-6 py-2 rounded-xl font-medium transition ${darkMode ? 'bg-indigo-900/50 text-indigo-300 hover:bg-indigo-800/80' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}>
                     إضافة أول محاضرة
                   </button>
                 </div>
