@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Trash2, BookOpen, Check, Cloud, CloudOff, 
   Loader2, Pencil, X, Save, CheckCircle2, Clock, LayoutList, Moon, Sun,
-  LogOut, Shield, Users, User, Calendar, Headphones, Scissors, Timer, ListOrdered, ArrowLeft
+  LogOut, Shield, Users, User, Calendar, Headphones, Scissors, Timer, ListOrdered, ArrowLeft,
+  Link as LinkIcon, Video, CloudUpload, PlayCircle
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -68,13 +69,14 @@ export default function App() {
   const syncTimeoutRef = useRef(null);
 
   // ---------- حالات مقسم الصوتيات (Audio Splitter) ----------
+  const [uploadMethod, setUploadMethod] = useState('local'); // 'local' or 'link'
+  const [audioLink, setAudioLink] = useState('');
   const [audioFile, setAudioFile] = useState(null);
   const [audioDuration, setAudioDuration] = useState(0);
   const [splitMode, setSplitMode] = useState('parts'); // 'parts' or 'time'
   const [splitParts, setSplitParts] = useState(4);
   const [splitTimeMin, setSplitTimeMin] = useState(30); // بالدقائق
   const [audioSegments, setAudioSegments] = useState([]);
-  const [targetSubjectForAudio, setTargetSubjectForAudio] = useState('');
   const [audioBaseName, setAudioBaseName] = useState('ريكورد المحاضرة');
 
   // دالة قراءة مدة الملف الصوتي
@@ -91,6 +93,18 @@ export default function App() {
         setAudioBaseName(file.name.replace(/\.[^/.]+$/, "")); 
       };
     }
+  };
+
+  // معالجة الروابط (YouTube, Drive, Telegram)
+  const handleLinkSubmit = (e) => {
+    e.preventDefault();
+    if (!audioLink.trim()) return;
+    alert("عذراً، جلب الملفات الصوتية مباشرة من روابط (يوتيوب، تليجرام، أو درايف) يتطلب خادم خلفي (Backend Server) لمعالجة التنزيل لأسباب أمنية. يرجى تنزيل الملف يدوياً ثم رفعه من جهازك كملف محلي.");
+  };
+
+  // رفع الملفات لدرايف
+  const handleDriveUpload = () => {
+    alert("لرفع الملفات المقسمة فعلياً إلى Google Drive، يجب ربط حسابك بـ Google API واستخدام مكتبات معالجة الصوت لقص الملف في الخلفية. هذه الواجهة جاهزة للربط مع الـ Backend الخاص بك.");
   };
 
   // تنسيق الوقت (ثواني إلى HH:MM:SS)
@@ -132,29 +146,6 @@ export default function App() {
       }
     }
     setAudioSegments(segments);
-  };
-
-  // إضافة الأجزاء للمادة المحددة
-  const addSegmentsToSubject = () => {
-    if (!targetSubjectForAudio || audioSegments.length === 0) return;
-    
-    const newLectures = audioSegments.map((seg, index) => ({
-      id: Date.now() + index, 
-      name: `${seg.name} (${seg.start} إلى ${seg.end})`,
-      studied: false, listenedRecord: false, transcribed: false,
-      createdQuestions: false, solvedOwnQuestions: false, solvedNewQuestions: false,
-      reviewCount: 0
-    }));
-
-    saveSubjectsData(subjects.map(sub => 
-      sub.id.toString() === targetSubjectForAudio.toString() 
-      ? { ...sub, lectures: [...sub.lectures, ...newLectures] } 
-      : sub
-    ));
-    
-    alert('تم إضافة أجزاء الريكورد للمادة بنجاح! 🚀');
-    setCurrentView('tracker');
-    setActiveSubjectId(Number(targetSubjectForAudio));
   };
   // --------------------------------------------------------
 
@@ -771,7 +762,7 @@ export default function App() {
             <h2 className={`text-3xl font-bold flex items-center gap-3 ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}>
               <Scissors className="text-indigo-500" size={32} /> مقسم الريكوردات الذكي
             </h2>
-            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>ارفع الريكورد الطويل، وسنقوم بتقسيمه لك لمهام صغيرة لتسهيل المذاكرة.</p>
+            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>قم بجلب أو رفع الريكورد الطويل وسنقوم بتقسيمه لك لمهام صغيرة.</p>
           </div>
           <button onClick={() => setCurrentView('tracker')} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition ${darkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white shadow-sm text-slate-600 hover:bg-slate-50'}`}>
             <ArrowLeft size={18} /> العودة
@@ -779,26 +770,77 @@ export default function App() {
         </div>
 
         <div className={`rounded-3xl p-6 border shadow-sm mb-6 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-          {/* الخطوة 1: رفع الملف */}
+          {/* الخطوة 1: رفع أو جلب الملف */}
           <div className="mb-8">
             <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>
               <span className="bg-indigo-100 text-indigo-600 w-6 h-6 rounded-full flex items-center justify-center text-sm">1</span> 
-              اختر الريكورد
+              اختر مصدر الريكورد
             </h3>
-            <div className={`border-2 border-dashed rounded-2xl p-8 text-center transition ${darkMode ? 'border-slate-600 bg-slate-700/30' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}>
-              <input type="file" accept="audio/*" onChange={handleAudioUpload} className="hidden" id="audio-upload" />
-              <label htmlFor="audio-upload" className="cursor-pointer flex flex-col items-center">
-                <Headphones size={48} className={`mb-4 ${audioFile ? 'text-green-500' : (darkMode ? 'text-slate-500' : 'text-slate-400')}`} />
-                <span className={`font-medium text-lg ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                  {audioFile ? audioFile.name : 'اضغط هنا لاختيار ملف صوتي من جهازك'}
-                </span>
-                {audioDuration > 0 && (
-                  <span className="mt-2 text-sm text-green-600 font-bold bg-green-100 px-3 py-1 rounded-full">
-                    المدة الكلية: {formatTime(audioDuration)}
-                  </span>
-                )}
-              </label>
+            
+            {/* أزرار اختيار الطريقة */}
+            <div className={`flex p-1 mb-6 rounded-xl border w-full max-w-md mx-auto ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-100 border-slate-200'}`}>
+              <button 
+                onClick={() => setUploadMethod('local')}
+                className={`flex-1 py-2 px-4 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 ${uploadMethod === 'local' ? (darkMode ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-indigo-600 shadow-sm') : (darkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700')}`}
+              >
+                <CloudUpload size={18}/> ملف من الجهاز
+              </button>
+              <button 
+                onClick={() => setUploadMethod('link')}
+                className={`flex-1 py-2 px-4 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 ${uploadMethod === 'link' ? (darkMode ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-indigo-600 shadow-sm') : (darkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700')}`}
+              >
+                <LinkIcon size={18}/> رابط خارجي
+              </button>
             </div>
+
+            {/* طريقة 1: رفع ملف محلي */}
+            {uploadMethod === 'local' && (
+              <div className={`border-2 border-dashed rounded-2xl p-8 text-center transition ${darkMode ? 'border-slate-600 bg-slate-700/30' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}>
+                <input type="file" accept="audio/*" onChange={handleAudioUpload} className="hidden" id="audio-upload" />
+                <label htmlFor="audio-upload" className="cursor-pointer flex flex-col items-center">
+                  <Headphones size={48} className={`mb-4 ${audioFile ? 'text-green-500' : (darkMode ? 'text-slate-500' : 'text-slate-400')}`} />
+                  <span className={`font-medium text-lg ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                    {audioFile ? audioFile.name : 'اضغط هنا لاختيار ملف صوتي من جهازك'}
+                  </span>
+                  {audioDuration > 0 && (
+                    <span className="mt-2 text-sm text-green-600 font-bold bg-green-100 px-3 py-1 rounded-full">
+                      المدة الكلية: {formatTime(audioDuration)}
+                    </span>
+                  )}
+                </label>
+                
+                {/* 🎧 معاينة الريكورد (Audio Preview) */}
+                {audioFile && (
+                  <div className="mt-6 w-full max-w-xl mx-auto flex flex-col items-center animate-in fade-in zoom-in duration-300">
+                    <span className={`text-xs font-bold mb-2 flex items-center gap-1 ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}><PlayCircle size={16}/> معاينة الصوت</span>
+                    <audio controls src={URL.createObjectURL(audioFile)} className="w-full h-10 outline-none rounded-full" />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* طريقة 2: جلب من رابط */}
+            {uploadMethod === 'link' && (
+              <div className={`border-2 rounded-2xl p-6 transition ${darkMode ? 'border-slate-600 bg-slate-700/30' : 'border-slate-300 bg-slate-50'}`}>
+                <div className="flex justify-center gap-4 mb-6">
+                  <span className={`flex items-center gap-1 text-sm font-medium ${darkMode ? 'text-red-400' : 'text-red-500'}`}><Video size={16}/> يوتيوب</span>
+                  <span className={`flex items-center gap-1 text-sm font-medium ${darkMode ? 'text-blue-400' : 'text-blue-500'}`}><Cloud size={16}/> تليجرام</span>
+                  <span className={`flex items-center gap-1 text-sm font-medium ${darkMode ? 'text-yellow-400' : 'text-yellow-600'}`}><CloudUpload size={16}/> درايف</span>
+                </div>
+                <form onSubmit={handleLinkSubmit} className="flex flex-col md:flex-row gap-3">
+                  <input 
+                    type="url" 
+                    placeholder="الصق الرابط هنا (YouTube, Telegram, Drive)..." 
+                    value={audioLink}
+                    onChange={(e) => setAudioLink(e.target.value)}
+                    className={`flex-1 rounded-xl px-4 py-3 outline-none focus:ring-2 ${darkMode ? 'bg-slate-800 text-white border-slate-600 focus:ring-indigo-500' : 'bg-white border border-slate-300 focus:ring-indigo-300'}`}
+                  />
+                  <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold transition flex items-center justify-center gap-2">
+                    <CloudUpload size={20}/> جلب الملف
+                  </button>
+                </form>
+              </div>
+            )}
           </div>
 
           {/* الخطوة 2: إعدادات التقسيم */}
@@ -812,7 +854,7 @@ export default function App() {
               <div className="grid md:grid-cols-2 gap-6">
                 <div className={`border rounded-2xl p-5 transition cursor-pointer ${splitMode === 'parts' ? (darkMode ? 'border-indigo-500 bg-indigo-900/20' : 'border-indigo-500 bg-indigo-50/50') : (darkMode ? 'border-slate-600' : 'border-slate-200')}`} onClick={() => setSplitMode('parts')}>
                   <div className="flex items-center gap-3 mb-4">
-                    <input type="radio" checked={splitMode === 'parts'} onChange={() => {}} className="w-5 h-5 accent-indigo-600" />
+                    <input type="radio" checked={splitMode === 'parts'} readOnly className="w-5 h-5 accent-indigo-600" />
                     <ListOrdered size={20} className={darkMode ? 'text-indigo-400' : 'text-indigo-600'} />
                     <span className={`font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>حسب عدد الأجزاء</span>
                   </div>
@@ -826,7 +868,7 @@ export default function App() {
 
                 <div className={`border rounded-2xl p-5 transition cursor-pointer ${splitMode === 'time' ? (darkMode ? 'border-indigo-500 bg-indigo-900/20' : 'border-indigo-500 bg-indigo-50/50') : (darkMode ? 'border-slate-600' : 'border-slate-200')}`} onClick={() => setSplitMode('time')}>
                   <div className="flex items-center gap-3 mb-4">
-                    <input type="radio" checked={splitMode === 'time'} onChange={() => {}} className="w-5 h-5 accent-indigo-600" />
+                    <input type="radio" checked={splitMode === 'time'} readOnly className="w-5 h-5 accent-indigo-600" />
                     <Timer size={20} className={darkMode ? 'text-indigo-400' : 'text-indigo-600'} />
                     <span className={`font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>حسب وقت محدد</span>
                   </div>
@@ -873,28 +915,20 @@ export default function App() {
                 ))}
               </div>
 
-              <div className={`p-6 rounded-2xl border ${darkMode ? 'bg-indigo-900/20 border-indigo-500/30' : 'bg-indigo-50 border-indigo-100'}`}>
-                <label className={`block font-bold mb-2 ${darkMode ? 'text-indigo-300' : 'text-indigo-800'}`}>أضف هذه الأجزاء إلى مادة:</label>
-                <div className="flex flex-col md:flex-row gap-3">
-                  <select 
-                    value={targetSubjectForAudio} 
-                    onChange={(e) => setTargetSubjectForAudio(e.target.value)}
-                    className={`flex-1 rounded-xl px-4 py-3 outline-none focus:ring-2 ${darkMode ? 'bg-slate-700 text-white border-slate-600 focus:ring-indigo-500' : 'bg-white border border-slate-300 focus:ring-indigo-300'}`}
-                  >
-                    <option value="" disabled>-- اختر المادة --</option>
-                    {subjects.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                  <button 
-                    onClick={addSegmentsToSubject}
-                    disabled={!targetSubjectForAudio}
-                    className={`px-8 py-3 rounded-xl font-bold transition flex justify-center items-center gap-2 ${!targetSubjectForAudio ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white shadow-md'}`}
-                  >
-                    <Save size={20} /> حفظ في المادة
-                  </button>
+              {/* زر رفع الملفات لـ Google Drive */}
+              <div className={`p-6 rounded-2xl border flex flex-col md:flex-row items-center justify-between gap-4 ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
+                <div>
+                  <h4 className={`font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>حفظ الملفات في درايف</h4>
+                  <p className={`text-sm mt-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>قم بقص وتصدير هذه الملفات إلى حسابك على Google Drive.</p>
                 </div>
+                <button 
+                  onClick={handleDriveUpload}
+                  className="w-full md:w-auto px-6 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-700 text-white transition shadow-md flex justify-center items-center gap-2"
+                >
+                  <CloudUpload size={20} /> رفع لـ Google Drive
+                </button>
               </div>
+
             </div>
           )}
         </div>
