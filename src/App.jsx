@@ -282,7 +282,7 @@ export default function App() {
     }
   }, [currentView, isAdmin]);
 
-  // تحديث البيانات محلياً ورفعها للسحابة بذكاء
+  // تحديث البيانات محلياً ورفعها للسحابة بذكاء (Optimistic Saving)
   const saveSubjectsData = (newSubjects) => {
     setSubjects(newSubjects); // تحديث الشاشة فوراً في جزء من الثانية
     
@@ -295,24 +295,24 @@ export default function App() {
 
     if (!user || !db) return;
 
-    setIsSyncing(true);
+    setIsSyncing(true); // إظهار "جاري الحفظ..."
 
     // إلغاء أي أمر حفظ قديم لو المستخدم ضغط بسرعة (تجميع الطلبات)
     if (syncTimeoutRef.current) {
       clearTimeout(syncTimeoutRef.current);
     }
 
-    // نأخر الحفظ للسحابة ثانية واحدة عشان نبعت كل حاجة مرة واحدة
-    syncTimeoutRef.current = setTimeout(async () => {
-      try {
-        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'trackerData', 'main');
-        await setDoc(docRef, { subjects: newSubjects }, { merge: true });
-      } catch (error) {
-        console.error("Save error:", error);
-      } finally {
-        setIsSyncing(false);
-      }
-    }, 1000); // الانتظار 1000 ملي ثانية (ثانية)
+    // نأخر الحفظ 800 ملي ثانية عشان نبعت كل حاجة مرة واحدة
+    syncTimeoutRef.current = setTimeout(() => {
+      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'trackerData', 'main');
+      
+      // Fire and forget: نبعت الداتا للفايربيس ونخليه هو يتعامل (حتى لو النت ضعيف هيحفظها محلي عنده ويرفعها لما النت ييجي)
+      setDoc(docRef, { subjects: newSubjects }, { merge: true })
+        .catch(err => console.error("Save error:", err));
+      
+      // إخفاء "جاري الحفظ..." وإظهار "تم الحفظ" فوراً للراحة النفسية للمستخدم!
+      setIsSyncing(false);
+    }, 800); 
   };
 
   // ---------------- إدارة المواد ----------------
