@@ -3,14 +3,14 @@ import {
   Plus, Trash2, BookOpen, Check, Cloud, CloudOff, 
   Loader2, Pencil, X, Save, CheckCircle2, Clock, LayoutList, Moon, Sun,
   LogOut, Shield, Users, User, Calendar, Timer, Play, Pause, RotateCcw, 
-  Settings, BarChart2, Coffee, Brain, ArrowLeft
+  Settings, BarChart2, Coffee, Brain, ArrowLeft, Trophy, Download, Medal, Star
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut 
 } from 'firebase/auth';
 import { 
-  getFirestore, doc, setDoc, onSnapshot, collection, getDocs 
+  getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection, getDocs, query, orderBy 
 } from 'firebase/firestore';
 
 // إعدادات Firebase الخاصة بمشروعك الحقيقي
@@ -38,19 +38,33 @@ try {
   console.error('Firebase initialization error:', error);
 }
 
+// دالة حساب الرتبة والألقاب
+const getUserRank = (totalSeconds) => {
+  const hours = totalSeconds / 3600;
+  if (hours >= 100) return { name: 'أسطورة الدفعة', icon: '👑', color: 'text-yellow-500' };
+  if (hours >= 50) return { name: 'دحيح محترف', icon: '🤓', color: 'text-purple-500' };
+  if (hours >= 20) return { name: 'طالب مجتهد', icon: '📚', color: 'text-blue-500' };
+  if (hours >= 5) return { name: 'بطل صاعد', icon: '⭐', color: 'text-green-500' };
+  return { name: 'مبتدئ', icon: '🌱', color: 'text-slate-500' };
+};
+
 export default function App() {
   // حالة تسجيل الدخول والمدير
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [currentView, setCurrentView] = useState('tracker'); // 'tracker', 'admin', or 'pomodoro'
+  const [currentView, setCurrentView] = useState('tracker'); // 'tracker', 'admin', 'pomodoro', 'leaderboard'
   const isAdmin = user && user.email === ADMIN_EMAIL;
 
   // الحالة الأساسية للمواد والمحاضرات والإحصائيات
   const [subjects, setSubjects] = useState([]);
-  const [stats, setStats] = useState([]); // [{ id, date, durationSeconds, subjectId }]
+  const [stats, setStats] = useState([]); // [{ id, date, durationSeconds, subjectId, lectureId }]
   const [activeSubjectId, setActiveSubjectId] = useState(null);
   const [newSubjectName, setNewSubjectName] = useState('');
   const [newLectureName, setNewLectureName] = useState('');
+
+  // حالات التثبيت PWA
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isIOS, setIsIOS] = useState(false);
 
   // حالات التعديل (Editing States)
   const [editingSubjectId, setEditingSubjectId] = useState(null);
@@ -62,9 +76,9 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // بيانات لوحة التحكم
-  const [adminUsersList, setAdminUsersList] = useState([]);
-  const [loadingAdmin, setLoadingAdmin] = useState(false);
+  // بيانات المستخدمين ولوحة التحكم
+  const [usersList, setUsersList] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
 
   // مرجع لتايمر الحفظ
   const syncTimeoutRef = useRef(null);
@@ -79,8 +93,38 @@ export default function App() {
   });
   const [timeLeft, setTimeLeft] = useState(pomodoroSettings.work * 60);
   const [selectedSubjectForTimer, setSelectedSubjectForTimer] = useState('');
-  const [completedPomodoros, setCompletedPomodoros] = useState(0);
+  const [selectedLectureForTimer, setSelectedLectureForTimer] = useState('');
   const [showTimerSettings, setShowTimerSettings] = useState(false);
+
+  // PWA & iOS Detection
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    
+    const ua = window.navigator.userAgent;
+    const ios = !!ua.match(/iPad/i) || !!ua.match(/iPhone/i);
+    const webkit = !!ua.match(/WebKit/i);
+    const isSafari = ios && webkit && !ua.match(/CriOS/i);
+    setIsIOS(ios);
+
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const handleInstallClick = () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult) => {
+        setDeferredPrompt(null);
+      });
+    } else if (isIOS) {
+      alert('لتثبيت التطبيق على الآيفون 📱:\n1. اضغط على زر المشاركة (Share) في المتصفح أسفل الشاشة.\n2. اختر "إضافة للشاشة الرئيسية" (Add to Home Screen).');
+    } else {
+      alert('التطبيق مثبت بالفعل، أو المتصفح لا يدعم التثبيت المباشر.');
+    }
+  };
 
   // تحديث الوقت عند تغيير الإعدادات أو الوضع
   useEffect(() => {
@@ -104,41 +148,36 @@ export default function App() {
 
   const handleTimerComplete = () => {
     setIsActive(false);
-    // تشغيل صوت تنبيه
     try {
       const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
       audio.play();
     } catch(e){}
 
     if (timerMode === 'work') {
-      // حفظ وقت المذاكرة في الإحصائيات
       const newStat = {
         id: Date.now(),
         date: new Date().toISOString(),
         durationSeconds: pomodoroSettings.work * 60,
-        subjectId: selectedSubjectForTimer || 'general'
+        subjectId: selectedSubjectForTimer || 'general',
+        lectureId: selectedLectureForTimer || null
       };
       const updatedStats = [...stats, newStat];
       saveDataAndSync(subjects, updatedStats);
 
-      const newCompleted = completedPomodoros + 1;
-      setCompletedPomodoros(newCompleted);
-      
-      // التبديل للبريك
-      if (newCompleted % 4 === 0) {
+      const completedCount = updatedStats.length;
+      if (completedCount % 4 === 0) {
         setTimerMode('longBreak');
       } else {
         setTimerMode('shortBreak');
       }
     } else {
-      // العودة للمذاكرة بعد البريك
       setTimerMode('work');
     }
   };
 
   const toggleTimer = () => {
     if (timerMode === 'work' && !selectedSubjectForTimer && !isActive && subjects.length > 0) {
-      alert("يفضل اختيار المادة التي ستذاكرها ليتم تسجيلها في إحصائياتك!");
+      alert("يفضل اختيار المادة (والمحاضرة) التي ستذاكرها ليتم تسجيلها بدقة في إحصائياتك!");
     }
     setIsActive(!isActive);
   };
@@ -164,7 +203,6 @@ export default function App() {
     return false;
   });
 
-  // تفعيل الوضع الليلي في المتصفح
   useEffect(() => {
     localStorage.setItem('darkMode', darkMode);
     if (darkMode) {
@@ -190,6 +228,8 @@ export default function App() {
       setUser(currentUser);
       setAuthLoading(false);
 
+      // We don't save public profile blindly here anymore, we save it in saveDataAndSync 
+      // so it always has the updated totalStudyTime. But we can ensure basic info is there.
       if (currentUser && db) {
         try {
           await setDoc(doc(db, 'artifacts', appId, 'usersList', currentUser.uid), {
@@ -199,7 +239,7 @@ export default function App() {
             lastLogin: new Date().toISOString()
           }, { merge: true });
         } catch (e) {
-          console.error("Error saving user info: ", e);
+          console.error("Error saving basic user info: ", e);
         }
       }
     });
@@ -234,7 +274,7 @@ export default function App() {
     }
   };
 
-  // 2. جلب البيانات وإدارة الاتصال عند سكون المتصفح
+  // 2. جلب البيانات
   useEffect(() => {
     if (authLoading) return;
     
@@ -351,26 +391,34 @@ export default function App() {
     };
   }, [user, authLoading]);
 
-  // جلب بيانات الإدارة (الأعضاء)
+  // جلب بيانات الإدارة والمنافسة (Leaderboard)
   useEffect(() => {
-    if (currentView === 'admin' && isAdmin && db) {
+    if ((currentView === 'admin' && isAdmin) || currentView === 'leaderboard') {
+      if (!db) return;
       const fetchUsers = async () => {
-        setLoadingAdmin(true);
+        setLoadingUsers(true);
         try {
           const querySnapshot = await getDocs(collection(db, 'artifacts', appId, 'usersList'));
-          const usersList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          usersList.sort((a, b) => new Date(b.lastLogin) - new Date(a.lastLogin));
-          setAdminUsersList(usersList);
+          const usersData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          
+          if (currentView === 'leaderboard') {
+            // ترتيب تنازلي حسب ساعات المذاكرة
+            usersData.sort((a, b) => (b.totalStudyTime || 0) - (a.totalStudyTime || 0));
+          } else {
+            // ترتيب حسب آخر ظهور في لوحة الإدارة
+            usersData.sort((a, b) => new Date(b.lastLogin) - new Date(a.lastLogin));
+          }
+          setUsersList(usersData);
         } catch (error) {
           console.error("Error fetching users list: ", error);
         }
-        setLoadingAdmin(false);
+        setLoadingUsers(false);
       };
       fetchUsers();
     }
   }, [currentView, isAdmin]);
 
-  // تحديث البيانات محلياً ورفعها للسحابة بذكاء (Optimistic Saving)
+  // تحديث البيانات محلياً ورفعها للسحابة مع تحديث البروفايل العام للمنافسة
   const saveDataAndSync = (newSubjects, newStats) => {
     setSubjects(newSubjects); 
     setStats(newStats);
@@ -391,12 +439,42 @@ export default function App() {
       clearTimeout(syncTimeoutRef.current);
     }
 
-    syncTimeoutRef.current = setTimeout(() => {
-      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'trackerData', 'main');
-      setDoc(docRef, payload, { merge: true })
-        .catch(err => console.error("Save error:", err));
-      setIsSyncing(false);
+    syncTimeoutRef.current = setTimeout(async () => {
+      try {
+        // حفظ الداتا الخاصة
+        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'trackerData', 'main');
+        await setDoc(docRef, payload, { merge: true });
+
+        // تحديث الداتا العامة (للوحة الشرف)
+        const totalSecs = newStats.reduce((acc, curr) => acc + curr.durationSeconds, 0);
+        const publicDocRef = doc(db, 'artifacts', appId, 'usersList', user.uid);
+        await setDoc(publicDocRef, {
+           totalStudyTime: totalSecs,
+           completedPomodoros: newStats.length
+        }, { merge: true });
+
+      } catch(err) {
+        console.error("Save error:", err);
+      } finally {
+        setIsSyncing(false);
+      }
     }, 800); 
+  };
+
+  // ---------------- حذف مستخدم للمدير ----------------
+  const adminDeleteUser = async (userId, userName) => {
+    if (window.confirm(`هل أنت متأكد من حذفك للمستخدم "${userName}" نهائياً من الموقع؟`)) {
+      try {
+        await deleteDoc(doc(db, 'artifacts', appId, 'usersList', userId));
+        // Optional: delete their tracker data (won't affect their Google Auth but clears app data)
+        await deleteDoc(doc(db, 'artifacts', appId, 'users', userId, 'trackerData', 'main'));
+        setUsersList(prev => prev.filter(u => u.id !== userId));
+        alert('تم الحذف بنجاح.');
+      } catch (error) {
+        console.error("Error deleting user: ", error);
+        alert('حدث خطأ أثناء الحذف.');
+      }
+    }
   };
 
   // ---------------- إدارة المواد والمحاضرات ----------------
@@ -527,13 +605,15 @@ export default function App() {
   };
 
   // --- حساب الإحصائيات الزمنية للمذاكرة ---
-  const calculateStudyTime = (period) => {
+  const calculateStudyTime = (period, customStats = stats) => {
     const now = new Date();
     let totalSeconds = 0;
     
-    stats.forEach(stat => {
+    customStats.forEach(stat => {
       const statDate = new Date(stat.date);
-      if (period === 'day' && statDate.toDateString() === now.toDateString()) {
+      if (period === 'all') {
+        totalSeconds += stat.durationSeconds;
+      } else if (period === 'day' && statDate.toDateString() === now.toDateString()) {
         totalSeconds += stat.durationSeconds;
       } else if (period === 'week') {
         const diffTime = Math.abs(now - statDate);
@@ -548,8 +628,11 @@ export default function App() {
 
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
-    return { hours, minutes };
+    return { hours, minutes, totalSeconds };
   };
+
+  const myTotalStudy = calculateStudyTime('all');
+  const myRank = getUserRank(myTotalStudy.totalSeconds);
 
   const activeSubject = subjects.find(s => s.id === activeSubjectId);
 
@@ -576,9 +659,14 @@ export default function App() {
   if (!user) {
     return (
       <div className={`min-h-screen flex flex-col items-center justify-center p-4 transition-colors duration-300 ${darkMode ? 'bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`} dir="rtl">
-        <button onClick={() => setDarkMode(!darkMode)} className={`absolute top-6 left-6 p-3 rounded-full transition-colors ${darkMode ? 'bg-slate-800 text-yellow-300 hover:bg-slate-700' : 'bg-white text-indigo-600 shadow-md hover:bg-slate-100'}`}>
-          {darkMode ? <Sun size={24} /> : <Moon size={24} />}
-        </button>
+        <div className="absolute top-6 left-6 flex gap-2">
+          <button onClick={handleInstallClick} className={`p-3 rounded-full transition-colors ${darkMode ? 'bg-indigo-900/50 text-indigo-300 hover:bg-indigo-800' : 'bg-white text-indigo-600 shadow-md hover:bg-slate-100'}`} title="تثبيت التطبيق">
+            <Download size={24} />
+          </button>
+          <button onClick={() => setDarkMode(!darkMode)} className={`p-3 rounded-full transition-colors ${darkMode ? 'bg-slate-800 text-yellow-300 hover:bg-slate-700' : 'bg-white text-indigo-600 shadow-md hover:bg-slate-100'}`}>
+            {darkMode ? <Sun size={24} /> : <Moon size={24} />}
+          </button>
+        </div>
 
         <div className={`w-full max-w-md p-8 rounded-3xl shadow-xl text-center border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}`}>
           <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner ${darkMode ? 'bg-indigo-900/50' : 'bg-indigo-50'}`}>
@@ -622,49 +710,43 @@ export default function App() {
       
       {/* الهيدر */}
       <header className={`${darkMode ? 'bg-slate-800 border-b border-slate-700' : 'bg-gradient-to-r from-indigo-700 to-indigo-500 shadow-md'} text-white p-3 sticky top-0 z-50 transition-colors`}>
-        <div className="container mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="container mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
           
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <BookOpen size={28} className={darkMode ? 'text-indigo-400' : 'text-white'} />
-              <h1 className="text-xl sm:text-2xl font-bold cursor-pointer" onClick={() => setCurrentView('tracker')}>لمّ المنهج</h1>
+          <div className="flex flex-wrap items-center justify-center gap-3 w-full md:w-auto">
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentView('tracker')}>
+              <BookOpen size={24} className={darkMode ? 'text-indigo-400' : 'text-white'} />
+              <h1 className="text-xl font-bold">لمّ المنهج</h1>
             </div>
             
-            <button 
-              onClick={() => setCurrentView('pomodoro')}
-              className={`hidden md:flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                currentView === 'pomodoro' 
-                ? 'bg-white text-indigo-600 shadow-sm' 
-                : (darkMode ? 'bg-slate-700 text-indigo-300 hover:bg-slate-600' : 'bg-indigo-800/50 text-indigo-100 hover:bg-indigo-800')
-              }`}
-            >
-              <Timer size={16} /> بومودورو والإحصائيات
-            </button>
-
-            {isAdmin && (
+            <div className="flex gap-2 bg-black/10 rounded-xl p-1 backdrop-blur-sm">
               <button 
-                onClick={() => setCurrentView(currentView === 'admin' ? 'tracker' : 'admin')}
-                className={`hidden md:flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                  currentView === 'admin' 
-                  ? 'bg-amber-500 text-white shadow-sm' 
-                  : (darkMode ? 'bg-slate-700 text-amber-400 hover:bg-slate-600' : 'bg-indigo-800/50 text-amber-200 hover:bg-indigo-800')
-                }`}
-              >
-                <Shield size={16} /> لوحة التحكم
-              </button>
-            )}
+                onClick={() => setCurrentView('tracker')}
+                className={`p-2 rounded-lg transition ${currentView === 'tracker' ? 'bg-white text-indigo-600 shadow-sm' : 'text-indigo-100 hover:bg-white/20'}`} title="الجدول"
+              ><LayoutList size={18} /></button>
+              
+              <button 
+                onClick={() => setCurrentView('pomodoro')}
+                className={`p-2 rounded-lg transition ${currentView === 'pomodoro' ? 'bg-white text-indigo-600 shadow-sm' : 'text-indigo-100 hover:bg-white/20'}`} title="بومودورو والإحصائيات"
+              ><Timer size={18} /></button>
+
+              <button 
+                onClick={() => setCurrentView('leaderboard')}
+                className={`p-2 rounded-lg transition ${currentView === 'leaderboard' ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-indigo-100 hover:bg-white/20'}`} title="لوحة الشرف والمنافسة"
+              ><Trophy size={18} /></button>
+
+              {isAdmin && (
+                <button 
+                  onClick={() => setCurrentView('admin')}
+                  className={`p-2 rounded-lg transition ${currentView === 'admin' ? 'bg-red-500 text-white shadow-sm' : 'text-indigo-100 hover:bg-white/20'}`} title="لوحة التحكم"
+                ><Shield size={18} /></button>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            {currentView === 'tracker' && (
-              <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm ${darkMode ? 'bg-slate-700' : 'bg-indigo-900/30'}`}>
-                {isSyncing ? (
-                  <><Loader2 size={14} className={`animate-spin ${darkMode ? 'text-indigo-400' : 'text-indigo-200'}`} /> <span>جاري الحفظ...</span></>
-                ) : (
-                  <><Cloud size={14} className="text-green-400" /> <span>تم الحفظ</span></>
-                )}
-              </div>
-            )}
+          <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+            <button onClick={handleInstallClick} className={`hidden sm:flex p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 text-indigo-300 hover:bg-slate-600' : 'bg-indigo-800/50 text-indigo-100 hover:bg-indigo-800'}`} title="تثبيت التطبيق">
+              <Download size={18} />
+            </button>
 
             <button 
               onClick={() => setDarkMode(!darkMode)} 
@@ -677,13 +759,16 @@ export default function App() {
             <div className="h-6 w-px bg-white/20 mx-1"></div>
 
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 bg-black/20 rounded-full pr-1 pl-3 py-1">
+              <div className="flex items-center gap-2 bg-black/20 rounded-full pr-1 pl-3 py-1 group cursor-pointer relative" title={`رتبتك الحالية: ${myRank.name}`}>
                 {user.photoURL ? (
-                  <img src={user.photoURL} alt="profile" className="w-7 h-7 rounded-full object-cover border border-white/20" />
+                  <img src={user.photoURL} alt="profile" className="w-8 h-8 rounded-full object-cover border border-white/30" />
                 ) : (
-                  <div className="w-7 h-7 rounded-full bg-indigo-400 flex items-center justify-center border border-white/20"><User size={16}/></div>
+                  <div className="w-8 h-8 rounded-full bg-indigo-400 flex items-center justify-center border border-white/30"><User size={16}/></div>
                 )}
-                <span className="text-sm font-medium hidden lg:block truncate max-w-[120px]">{user.displayName || 'مستخدم'}</span>
+                <div className="flex flex-col hidden lg:flex">
+                  <span className="text-sm font-medium truncate max-w-[120px] leading-tight">{user.displayName || 'مستخدم'}</span>
+                  <span className={`text-[10px] font-bold ${myRank.color.replace('text-', 'text-')}`}>{myRank.icon} {myRank.name}</span>
+                </div>
               </div>
               <button 
                 onClick={handleLogout}
@@ -702,26 +787,26 @@ export default function App() {
         <main className="container mx-auto p-4 mt-6">
           <div className={`rounded-3xl p-6 md:p-8 border shadow-sm mb-6 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
             <div className="flex items-center gap-3 mb-8 border-b pb-4 border-slate-200 dark:border-slate-700">
-              <div className="p-3 bg-amber-100 text-amber-600 rounded-xl">
+              <div className="p-3 bg-red-100 text-red-600 rounded-xl">
                 <Shield size={32} />
               </div>
               <div>
                 <h2 className="text-2xl font-bold">لوحة تحكم المدير</h2>
-                <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>أهلاً بك يا مدير، هذه بيانات المسجلين في تطبيقك.</p>
+                <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>أهلاً بك يا مدير، هذه بيانات المسجلين في تطبيقك وإمكانية حذفهم.</p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
               <div className={`p-6 rounded-2xl border flex flex-col items-center justify-center text-center ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-indigo-50 border-indigo-100'}`}>
                 <Users size={32} className="text-indigo-500 mb-2" />
-                <span className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">{adminUsersList.length}</span>
+                <span className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">{usersList.length}</span>
                 <span className={`text-sm font-medium ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>إجمالي الطلاب المسجلين</span>
               </div>
             </div>
 
-            <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><Users size={20}/> قائمة الطلاب</h3>
+            <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><Users size={20}/> إدارة الطلاب</h3>
             
-            {loadingAdmin ? (
+            {loadingUsers ? (
               <div className="flex justify-center py-12"><Loader2 className="animate-spin text-indigo-500" size={40} /></div>
             ) : (
               <div className={`rounded-xl border overflow-hidden ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
@@ -732,11 +817,11 @@ export default function App() {
                         <th className="p-4 font-semibold border-b dark:border-slate-700">#</th>
                         <th className="p-4 font-semibold border-b dark:border-slate-700">الطالب</th>
                         <th className="p-4 font-semibold border-b dark:border-slate-700">الإيميل</th>
-                        <th className="p-4 font-semibold border-b dark:border-slate-700">آخر ظهور</th>
+                        <th className="p-4 font-semibold border-b dark:border-slate-700 text-center">إجراء</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {adminUsersList.map((adminUser, index) => (
+                      {usersList.map((adminUser, index) => (
                         <tr key={adminUser.id} className={`border-b transition duration-300 ${darkMode ? 'border-slate-700 hover:bg-slate-700/50' : 'border-slate-100 hover:bg-slate-50'}`}>
                           <td className="p-4 font-medium text-slate-500">{index + 1}</td>
                           <td className="p-4">
@@ -750,12 +835,18 @@ export default function App() {
                             </div>
                           </td>
                           <td className="p-4 text-slate-500 dark:text-slate-400 font-mono text-sm" dir="ltr">{adminUser.email}</td>
-                          <td className="p-4 text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-2">
-                            <Calendar size={14}/> {formatDate(adminUser.lastLogin)}
+                          <td className="p-4 flex justify-center">
+                            <button 
+                              onClick={() => adminDeleteUser(adminUser.id, adminUser.name)}
+                              className="p-2 rounded-lg bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition"
+                              title="حذف المستخدم نهائياً"
+                            >
+                              <Trash2 size={18} />
+                            </button>
                           </td>
                         </tr>
                       ))}
-                      {adminUsersList.length === 0 && (
+                      {usersList.length === 0 && (
                         <tr>
                           <td colSpan="4" className="text-center p-8 text-slate-500">لم يسجل أحد بعد.</td>
                         </tr>
@@ -768,6 +859,88 @@ export default function App() {
           </div>
         </main>
 
+      ) : currentView === 'leaderboard' ? (
+      
+      /* ---------------- صفحة لوحة الشرف (التنافس) ---------------- */
+      <main className="container mx-auto p-4 mt-6 max-w-4xl">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h2 className={`text-3xl font-bold flex items-center gap-3 ${darkMode ? 'text-yellow-400' : 'text-amber-600'}`}>
+              <Trophy size={36} /> لوحة الشرف لأبطال الدفعة
+            </h2>
+            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>تنافس مع زملائك وكن من الأوائل! الترتيب مبني على إجمالي ساعات المذاكرة.</p>
+          </div>
+        </div>
+
+        {loadingUsers ? (
+          <div className="flex justify-center py-20"><Loader2 className="animate-spin text-amber-500" size={48} /></div>
+        ) : (
+          <div className="space-y-4">
+            {/* عرض التوب 3 بشكل مميز */}
+            <div className="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-8 mb-12 mt-8">
+              {usersList[1] && (
+                <div className="flex flex-col items-center order-2 md:order-1 transform md:translate-y-8">
+                  <div className="relative">
+                    <img src={usersList[1].photoURL || 'https://via.placeholder.com/150'} alt="2nd" className="w-20 h-20 rounded-full border-4 border-slate-300 object-cover shadow-lg" />
+                    <div className="absolute -bottom-3 -right-3 bg-slate-200 w-8 h-8 rounded-full flex items-center justify-center font-bold border-2 border-white shadow-sm">2</div>
+                  </div>
+                  <span className={`font-bold mt-4 ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{usersList[1].name.split(' ')[0]}</span>
+                  <span className="text-xs text-slate-500 font-bold bg-slate-100 px-2 py-1 rounded-full mt-1">🥈 {Math.floor((usersList[1].totalStudyTime || 0) / 3600)} ساعة</span>
+                </div>
+              )}
+              
+              {usersList[0] && (
+                <div className="flex flex-col items-center order-1 md:order-2 z-10">
+                  <div className="relative">
+                    <Trophy size={32} className="absolute -top-10 left-1/2 transform -translate-x-1/2 text-yellow-400 animate-bounce" />
+                    <img src={usersList[0].photoURL || 'https://via.placeholder.com/150'} alt="1st" className="w-28 h-28 rounded-full border-4 border-yellow-400 object-cover shadow-xl shadow-yellow-500/20" />
+                    <div className="absolute -bottom-4 -right-2 bg-yellow-400 text-yellow-900 w-10 h-10 rounded-full flex items-center justify-center font-black border-2 border-white shadow-md text-lg">1</div>
+                  </div>
+                  <span className={`font-black text-xl mt-5 ${darkMode ? 'text-yellow-400' : 'text-amber-600'}`}>{usersList[0].name.split(' ')[0]}</span>
+                  <span className="text-sm font-bold bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full mt-1">🥇 {Math.floor((usersList[0].totalStudyTime || 0) / 3600)} ساعة</span>
+                </div>
+              )}
+
+              {usersList[2] && (
+                <div className="flex flex-col items-center order-3 transform md:translate-y-12">
+                  <div className="relative">
+                    <img src={usersList[2].photoURL || 'https://via.placeholder.com/150'} alt="3rd" className="w-16 h-16 rounded-full border-4 border-amber-700/50 object-cover shadow-md" />
+                    <div className="absolute -bottom-2 -right-2 bg-amber-700/50 text-white w-6 h-6 rounded-full flex items-center justify-center font-bold border-2 border-white text-xs">3</div>
+                  </div>
+                  <span className={`font-bold mt-3 text-sm ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{usersList[2].name.split(' ')[0]}</span>
+                  <span className="text-[10px] text-amber-900 font-bold bg-amber-100 px-2 py-0.5 rounded-full mt-1">🥉 {Math.floor((usersList[2].totalStudyTime || 0) / 3600)} س</span>
+                </div>
+              )}
+            </div>
+
+            {/* باقي القائمة */}
+            <div className={`rounded-3xl border shadow-sm overflow-hidden ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              {usersList.slice(3).map((u, idx) => {
+                const rnk = getUserRank(u.totalStudyTime || 0);
+                return (
+                  <div key={u.id} className={`flex items-center justify-between p-4 ${idx !== usersList.length - 4 ? (darkMode ? 'border-b border-slate-700' : 'border-b border-slate-100') : ''} ${u.id === user?.uid ? (darkMode ? 'bg-indigo-900/30' : 'bg-indigo-50') : ''}`}>
+                    <div className="flex items-center gap-4">
+                      <span className={`font-bold w-6 text-center ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>{idx + 4}</span>
+                      <img src={u.photoURL || 'https://via.placeholder.com/150'} alt="user" className="w-10 h-10 rounded-full object-cover" />
+                      <div>
+                        <h4 className={`font-bold flex items-center gap-2 ${u.id === user?.uid ? 'text-indigo-500' : (darkMode ? 'text-slate-200' : 'text-slate-800')}`}>
+                          {u.name} {u.id === user?.uid && <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">أنت</span>}
+                        </h4>
+                        <span className={`text-xs font-bold ${rnk.color}`}>{rnk.icon} {rnk.name}</span>
+                      </div>
+                    </div>
+                    <div className="text-left">
+                      <span className={`block font-black text-lg ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{Math.floor((u.totalStudyTime || 0) / 3600)}</span>
+                      <span className={`text-[10px] font-bold ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>ساعة</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </main>
+
       ) : currentView === 'pomodoro' ? (
       
       /* ---------------- صفحة بومودورو والإحصائيات ---------------- */
@@ -777,11 +950,8 @@ export default function App() {
             <h2 className={`text-3xl font-bold flex items-center gap-3 ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}>
               <Timer className="text-indigo-500" size={32} /> مؤقت المذاكرة (بومودورو)
             </h2>
-            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>حدد المادة، ركز في دراستك، وسنقوم بتسجيل إنجازك تلقائياً.</p>
+            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>حدد المادة والمحاضرة، ركز في دراستك، وسنقوم بتسجيل إنجازك تلقائياً.</p>
           </div>
-          <button onClick={() => setCurrentView('tracker')} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition ${darkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white shadow-sm text-slate-600 hover:bg-slate-50'}`}>
-            <ArrowLeft size={18} /> العودة للجدول
-          </button>
         </div>
 
         <div className="grid lg:grid-cols-2 gap-6">
@@ -820,7 +990,7 @@ export default function App() {
                   cx="50%" cy="50%" r="48%" fill="none" strokeWidth="8" 
                   strokeLinecap="round"
                   className={`transition-all duration-1000 ease-linear ${timerMode === 'work' ? 'stroke-indigo-500' : timerMode === 'shortBreak' ? 'stroke-green-500' : 'stroke-blue-500'}`}
-                  strokeDasharray={`${2 * Math.PI * (window.innerWidth >= 768 ? 150 : 120)}`} // Approximate circumference
+                  strokeDasharray={`${2 * Math.PI * (window.innerWidth >= 768 ? 150 : 120)}`}
                   strokeDashoffset={`${(1 - (timeLeft / (pomodoroSettings[timerMode] * 60))) * (2 * Math.PI * (window.innerWidth >= 768 ? 150 : 120))}`}
                 />
               </svg>
@@ -860,21 +1030,42 @@ export default function App() {
               </button>
             </div>
 
-            {/* اختيار المادة */}
+            {/* اختيار المادة والمحاضرة */}
             {timerMode === 'work' && (
-              <div className="mt-8 w-full max-w-sm z-10">
-                <label className={`block text-sm font-bold mb-2 text-center ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>ماذا ستذاكر الآن؟</label>
-                <select 
-                  value={selectedSubjectForTimer} 
-                  onChange={(e) => setSelectedSubjectForTimer(e.target.value)}
-                  className={`w-full rounded-xl px-4 py-3 outline-none focus:ring-2 text-center font-medium shadow-sm border ${darkMode ? 'bg-slate-700 text-white border-slate-600 focus:ring-indigo-500' : 'bg-white border-slate-300 focus:ring-indigo-300'}`}
-                >
-                  <option value="">-- اختر مادة لتسجيل الإحصائيات --</option>
-                  <option value="general">مذاكرة عامة (بدون مادة محددة)</option>
-                  {subjects.map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
+              <div className="mt-8 w-full max-w-sm z-10 flex flex-col gap-3">
+                <div>
+                  <label className={`block text-xs font-bold mb-1 text-right ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>المادة:</label>
+                  <select 
+                    value={selectedSubjectForTimer} 
+                    onChange={(e) => {
+                      setSelectedSubjectForTimer(e.target.value);
+                      setSelectedLectureForTimer(''); // Reset lecture when subject changes
+                    }}
+                    className={`w-full rounded-xl px-4 py-3 outline-none focus:ring-2 font-medium shadow-sm border ${darkMode ? 'bg-slate-700 text-white border-slate-600 focus:ring-indigo-500' : 'bg-white border-slate-300 focus:ring-indigo-300'}`}
+                  >
+                    <option value="">-- مذاكرة عامة (بدون مادة) --</option>
+                    {subjects.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                {/* تظهر فقط إذا اختار مادة وبها محاضرات */}
+                {selectedSubjectForTimer && subjects.find(s => s.id.toString() === selectedSubjectForTimer.toString())?.lectures.length > 0 && (
+                  <div className="animate-in fade-in slide-in-from-top-2">
+                    <label className={`block text-xs font-bold mb-1 text-right ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>المحاضرة (اختياري):</label>
+                    <select 
+                      value={selectedLectureForTimer} 
+                      onChange={(e) => setSelectedLectureForTimer(e.target.value)}
+                      className={`w-full rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 shadow-sm border ${darkMode ? 'bg-indigo-900/30 text-indigo-200 border-indigo-700 focus:ring-indigo-500' : 'bg-indigo-50 border-indigo-200 focus:ring-indigo-300'}`}
+                    >
+                      <option value="">-- حدد المحاضرة --</option>
+                      {subjects.find(s => s.id.toString() === selectedSubjectForTimer.toString()).lectures.map(l => (
+                        <option key={l.id} value={l.id}>{l.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
             
@@ -932,9 +1123,14 @@ export default function App() {
 
             {/* الإحصائيات */}
             <div className={`rounded-3xl p-6 border shadow-sm flex-1 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-              <h3 className={`text-xl font-bold mb-6 flex items-center gap-2 pb-3 border-b ${darkMode ? 'text-slate-200 border-slate-700' : 'text-slate-800 border-slate-100'}`}>
-                <BarChart2 className="text-indigo-500" size={24}/> حصاد المذاكرة
-              </h3>
+              <div className={`flex justify-between items-end pb-3 border-b mb-6 ${darkMode ? 'border-slate-700' : 'border-slate-100'}`}>
+                <h3 className={`text-xl font-bold flex items-center gap-2 ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                  <BarChart2 className="text-indigo-500" size={24}/> حصاد المذاكرة
+                </h3>
+                <div className="text-center">
+                  <span className={`text-xs font-bold ${myRank.color}`}>{myRank.icon} رتبتك: {myRank.name}</span>
+                </div>
+              </div>
               
               <div className="grid grid-cols-1 gap-4 mb-6">
                 <div className={`p-5 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-indigo-900/20 border-indigo-500/30' : 'bg-indigo-50 border-indigo-100'}`}>
@@ -975,7 +1171,7 @@ export default function App() {
               </div>
 
               <div className={`p-4 rounded-xl text-center text-sm font-medium ${darkMode ? 'bg-slate-700/50 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
-                لقد أكملت <span className="font-bold text-indigo-500">{completedPomodoros}</span> جلسات تركيز بنجاح منذ فتح الموقع! 👏
+                لقد أكملت <span className="font-bold text-indigo-500">{stats.length}</span> جلسات تركيز بنجاح منذ فتح الموقع! 👏
               </div>
             </div>
 
