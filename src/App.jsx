@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Plus, Trash, BookOpen, Check, Cloud, 
-  Loader2, Pencil, X, Save, CheckCircle, Clock, List, Moon, Sun,
+  Plus, Trash2, BookOpen, Check, Cloud, 
+  Loader2, Pencil, X, Save, CheckCircle2, Clock, LayoutList, Moon, Sun,
   LogOut, Shield, Users, User, Calendar, Timer, Play, Pause, RotateCcw, 
-  Settings, BarChart, Coffee, Brain, ArrowLeft, Trophy, Download,
-  CloudUpload, Link as LinkIcon, Server, RefreshCw, UserCheck, UserX
+  Settings, BarChart2, Coffee, Brain, Trophy, Download,
+  CloudUpload, Link, Server, RefreshCw, UserCheck, UserX
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -61,7 +61,6 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [currentView, setCurrentView] = useState('tracker'); // 'tracker', 'admin', 'pomodoro', 'leaderboard', 'automation'
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   const [subjects, setSubjects] = useState([]);
   const [stats, setStats] = useState([]);
@@ -156,7 +155,6 @@ export default function App() {
 
       if (currentUser && db) {
         const isOwner = currentUser.email === ADMIN_EMAIL;
-        setIsSuperAdmin(isOwner);
 
         const userRef = doc(db, 'artifacts', appId, 'usersList', currentUser.uid);
         onSnapshot(userRef, (docSnap) => {
@@ -178,7 +176,6 @@ export default function App() {
         } catch (e) { console.error("Error saving user info: ", e); }
       } else {
         setIsAdmin(false);
-        setIsSuperAdmin(false);
       }
     });
     return () => unsubscribe();
@@ -197,7 +194,7 @@ export default function App() {
       await signOut(auth);
       setSubjects([]); setStats([]); setActiveSubjectId(null);
       setCurrentView('tracker'); setIsActive(false);
-      setIsAdmin(false); setIsSuperAdmin(false);
+      setIsAdmin(false);
     } catch (error) { console.error(error); }
   };
 
@@ -603,7 +600,7 @@ export default function App() {
             </div>
             
             <div className="flex gap-2 bg-black/10 rounded-xl p-1 backdrop-blur-sm">
-              <button onClick={() => setCurrentView('tracker')} className={`p-2 rounded-lg transition ${currentView === 'tracker' ? 'bg-white text-indigo-600 shadow-sm' : 'text-indigo-100 hover:bg-white/20'}`} title="الجدول"><List size={18} /></button>
+              <button onClick={() => setCurrentView('tracker')} className={`p-2 rounded-lg transition ${currentView === 'tracker' ? 'bg-white text-indigo-600 shadow-sm' : 'text-indigo-100 hover:bg-white/20'}`} title="الجدول"><LayoutList size={18} /></button>
               <button onClick={() => setCurrentView('pomodoro')} className={`p-2 rounded-lg transition ${currentView === 'pomodoro' ? 'bg-white text-indigo-600 shadow-sm' : 'text-indigo-100 hover:bg-white/20'}`} title="بومودورو والإحصائيات"><Timer size={18} /></button>
               <button onClick={() => setCurrentView('leaderboard')} className={`p-2 rounded-lg transition ${currentView === 'leaderboard' ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-indigo-100 hover:bg-white/20'}`} title="لوحة الشرف"><Trophy size={18} /></button>
               <button onClick={() => setCurrentView('automation')} className={`p-2 rounded-lg transition ${currentView === 'automation' ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-indigo-100 hover:bg-white/20'}`} title="المعالج السحابي"><Server size={18} /></button>
@@ -628,7 +625,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 bg-black/20 rounded-full pr-1 pl-3 py-1 group cursor-pointer relative" title={`رتبتك الحالية: ${myRank.name}`}>
                 <img src={user.photoURL || 'https://via.placeholder.com/150'} alt="profile" className="w-8 h-8 rounded-full object-cover border border-white/30" />
-                <div className="flex flex-col hidden lg:flex">
+                <div className="hidden lg:flex flex-col">
                   <span className="text-sm font-medium truncate max-w-[120px] leading-tight">{user.displayName || 'مستخدم'}</span>
                   <span className={`text-[10px] font-bold ${myRank.color}`}>{myRank.icon} {myRank.name}</span>
                 </div>
@@ -653,7 +650,7 @@ export default function App() {
               <div>
                 <label className="block font-bold mb-2">رابط المحاضرة (URL):</label>
                 <div className="relative">
-                  <LinkIcon className="absolute right-4 top-3.5 text-slate-400" size={20} />
+                  <Link className="absolute right-4 top-3.5 text-slate-400" size={20} />
                   <input type="url" required value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://youtube.com/..." className={`w-full rounded-xl pr-12 pl-4 py-3 border focus:ring-2 outline-none ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-300'}`} />
                 </div>
               </div>
@@ -689,7 +686,7 @@ export default function App() {
             </form>
             {serverResult && (
               <div className={`mt-8 p-6 rounded-2xl border bg-green-500/10 border-green-500/30 animate-in zoom-in`}>
-                <h3 className="text-green-600 dark:text-green-400 font-black text-xl flex items-center gap-2 mb-4"><CheckCircle size={24}/> تمت العملية بنجاح!</h3>
+                <h3 className="text-green-600 dark:text-green-400 font-black text-xl flex items-center gap-2 mb-4"><CheckCircle2 size={24}/> تمت العملية بنجاح!</h3>
                 <p className="font-bold mb-4">{serverResult.title}</p>
                 <div className="space-y-2">
                   {serverResult.links.map((link, idx) => (
@@ -765,7 +762,7 @@ export default function App() {
                 </div>
               )}
               <div className={`rounded-3xl p-6 border shadow-sm flex-1 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                <h3 className={`text-xl font-bold flex items-center gap-2 pb-3 border-b mb-6 ${darkMode ? 'border-slate-700' : 'border-slate-100'}`}><BarChart className="text-indigo-500" size={24}/> حصاد المذاكرة</h3>
+                <h3 className={`text-xl font-bold flex items-center gap-2 pb-3 border-b mb-6 ${darkMode ? 'border-slate-700' : 'border-slate-100'}`}><BarChart2 className="text-indigo-500" size={24}/> حصاد المذاكرة</h3>
                 <div className="grid grid-cols-1 gap-4 mb-6">
                   <div className={`p-5 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-indigo-900/20 border-indigo-500/30' : 'bg-indigo-50 border-indigo-100'}`}>
                     <div><span className={`block text-sm font-bold mb-1 ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>اليوم</span><span className={`text-2xl font-black ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}>{calculateStudyTime('day').hours} <span className="text-sm font-medium">س</span> و {calculateStudyTime('day').minutes} <span className="text-sm font-medium">د</span></span></div>
@@ -777,7 +774,7 @@ export default function App() {
                   </div>
                   <div className={`p-5 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-purple-900/20 border-purple-500/30' : 'bg-purple-50 border-purple-100'}`}>
                     <div><span className={`block text-sm font-bold mb-1 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>هذا الشهر</span><span className={`text-2xl font-black ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}>{calculateStudyTime('month').hours} <span className="text-sm font-medium">س</span> و {calculateStudyTime('month').minutes} <span className="text-sm font-medium">د</span></span></div>
-                    <BarChart className="text-purple-500" size={32} />
+                    <BarChart2 className="text-purple-500" size={32} />
                   </div>
                 </div>
               </div>
@@ -897,7 +894,7 @@ export default function App() {
                           <td className="p-4">
                             <div className="flex justify-center gap-2">
                               <button onClick={() => toggleAdminRole(u.id, u.role, u.email)} className={`p-2 rounded-lg ${isThisAdmin ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-600'}`} title="تغيير الصلاحيات">{isThisAdmin ? <UserX size={18} /> : <UserCheck size={18} />}</button>
-                              <button onClick={() => adminDeleteUser(u.id, u.name, u.email)} className="p-2 rounded-lg bg-red-100 text-red-600" title="حذف نهائي"><Trash size={18} /></button>
+                              <button onClick={() => adminDeleteUser(u.id, u.name, u.email)} className="p-2 rounded-lg bg-red-100 text-red-600" title="حذف نهائي"><Trash2 size={18} /></button>
                             </div>
                           </td>
                         </tr>
@@ -918,7 +915,7 @@ export default function App() {
         {/* الشريط الجانبي (قائمة المواد) */}
         <aside className={`w-full lg:w-1/4 rounded-2xl p-4 border h-fit sticky top-24 ${darkMode ? 'bg-slate-800 border-slate-700 shadow-none' : 'bg-white border-slate-200 shadow-sm'}`}>
           <h2 className={`text-lg font-bold mb-4 flex items-center gap-2 border-b pb-3 ${darkMode ? 'text-slate-200 border-slate-700' : 'text-slate-700 border-slate-200'}`}>
-            <List size={20} className={darkMode ? 'text-indigo-400' : 'text-indigo-500'}/> المواد الدراسية
+            <LayoutList size={20} className={darkMode ? 'text-indigo-400' : 'text-indigo-500'}/> المواد الدراسية
           </h2>
           
           <form onSubmit={addSubject} className="mb-4 flex gap-2">
@@ -946,7 +943,7 @@ export default function App() {
                     </button>
                     <div className="flex items-center gap-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => startEditSubject(subject)} className={`p-1.5 rounded-md ${darkMode ? 'text-slate-400 hover:text-indigo-400 hover:bg-slate-600' : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-100'}`}><Pencil size={14} /></button>
-                      <button onClick={() => deleteSubject(subject.id)} className={`p-1.5 rounded-md ${darkMode ? 'text-slate-400 hover:text-red-400 hover:bg-slate-600' : 'text-slate-400 hover:text-red-600 hover:bg-red-100'}`}><Trash size={14} /></button>
+                      <button onClick={() => deleteSubject(subject.id)} className={`p-1.5 rounded-md ${darkMode ? 'text-slate-400 hover:text-red-400 hover:bg-slate-600' : 'text-slate-400 hover:text-red-600 hover:bg-red-100'}`}><Trash2 size={14} /></button>
                     </div>
                   </div>
                 )}
@@ -970,7 +967,7 @@ export default function App() {
                       <div className="bg-gradient-to-l from-indigo-500 to-purple-500 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${getProgress(activeSubject)}%` }}></div>
                     </div>
                     <div className={`flex gap-4 text-xs font-medium ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      <span className="flex items-center gap-1"><CheckCircle size={14} className="text-green-500"/> إنجاز المادة: {getProgress(activeSubject)}%</span>
+                      <span className="flex items-center gap-1"><CheckCircle2 size={14} className="text-green-500"/> إنجاز المادة: {getProgress(activeSubject)}%</span>
                       <span className="flex items-center gap-1"><BookOpen size={14} className={darkMode ? 'text-indigo-400' : 'text-indigo-500'}/> المحاضرات: {activeSubject.lectures.length}</span>
                     </div>
                   </div>
@@ -1005,7 +1002,7 @@ export default function App() {
                                 <h3 className={`font-bold text-lg pr-1 flex items-center gap-2 ${isDone ? (darkMode ? 'text-slate-500 line-through decoration-green-500' : 'text-slate-500 line-through decoration-green-400') : (darkMode ? 'text-slate-200' : 'text-slate-800')}`}>{lecture.name}</h3>
                                 <div className={`flex gap-1 rounded-lg p-1 border shrink-0 ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
                                   <button onClick={() => startEditLecture(lecture)} className={`p-1.5 ${darkMode ? 'text-slate-400 hover:text-indigo-400' : 'text-slate-400 hover:text-indigo-600'}`}><Pencil size={14} /></button>
-                                  <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className={`p-1.5 ${darkMode ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-600'}`}><Trash size={14} /></button>
+                                  <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className={`p-1.5 ${darkMode ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-600'}`}><Trash2 size={14} /></button>
                                 </div>
                               </>
                             )}
@@ -1062,7 +1059,7 @@ export default function App() {
                                     </div>
                                   ) : (
                                     <div className="flex items-center gap-2 group/name">
-                                      {isDone && <CheckCircle size={16} className="text-green-500 shrink-0" />}
+                                      {isDone && <CheckCircle2 size={16} className="text-green-500 shrink-0" />}
                                       <span className={`truncate max-w-[180px] ${isDone ? (darkMode ? 'text-slate-500 line-through decoration-green-500' : 'text-slate-500 line-through decoration-green-400') : (darkMode ? 'text-slate-200' : 'text-slate-800')}`}>{lecture.name}</span>
                                     </div>
                                   )}
@@ -1087,7 +1084,7 @@ export default function App() {
                                 <td className="p-3">
                                   <div className="flex items-center justify-center gap-2">
                                     <button onClick={() => startEditLecture(lecture)} className={`p-1.5 rounded-lg ${darkMode ? 'text-slate-400 hover:text-indigo-400' : 'text-slate-400 hover:text-indigo-600'}`} title="تعديل المحاضرة"><Pencil size={16} /></button>
-                                    <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className={`p-1.5 rounded-lg ${darkMode ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-600'}`} title="حذف المحاضرة"><Trash size={16} /></button>
+                                    <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className={`p-1.5 rounded-lg ${darkMode ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-600'}`} title="حذف المحاضرة"><Trash2 size={16} /></button>
                                   </div>
                                 </td>
                               </tr>
@@ -1110,7 +1107,7 @@ export default function App() {
           ) : (
             <div className={`h-full flex items-center justify-center rounded-2xl p-12 border min-h-[50vh] ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
               <div className="text-center">
-                <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 ${darkMode ? 'bg-indigo-900/30' : 'bg-indigo-50'}`}><List size={40} className={darkMode ? 'text-indigo-400' : 'text-indigo-400'} /></div>
+                <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 ${darkMode ? 'bg-indigo-900/30' : 'bg-indigo-50'}`}><LayoutList size={40} className={darkMode ? 'text-indigo-400' : 'text-indigo-400'} /></div>
                 <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>أهلاً بك في لمّ المنهج! 👋</h2>
                 <p className={`max-w-md mx-auto ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>قم باختيار مادة من القائمة الجانبية أو أضف مادة دراسية جديدة للبدء في تنظيم وقتك بنجاح.</p>
               </div>
