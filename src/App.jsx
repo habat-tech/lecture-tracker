@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Trash2, BookOpen, Check, Cloud, CloudOff, 
   Loader2, Pencil, X, Save, CheckCircle2, Clock, LayoutList, Moon, Sun,
-  LogOut, Shield, Users, User, Calendar
+  LogOut, Shield, Users, User, Calendar, Headphones, Scissors, Timer, ListOrdered, ArrowLeft
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -41,7 +41,7 @@ export default function App() {
   // حالة تسجيل الدخول والمدير
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [currentView, setCurrentView] = useState('tracker'); // 'tracker' or 'admin'
+  const [currentView, setCurrentView] = useState('tracker'); // 'tracker', 'admin', or 'audio'
   const isAdmin = user && user.email === ADMIN_EMAIL;
 
   // الحالة الأساسية للمواد والمحاضرات
@@ -66,6 +66,97 @@ export default function App() {
 
   // مرجع لتايمر الحفظ (لمنع الضغط وتجميع التعديلات)
   const syncTimeoutRef = useRef(null);
+
+  // ---------- حالات مقسم الصوتيات (Audio Splitter) ----------
+  const [audioFile, setAudioFile] = useState(null);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [splitMode, setSplitMode] = useState('parts'); // 'parts' or 'time'
+  const [splitParts, setSplitParts] = useState(4);
+  const [splitTimeMin, setSplitTimeMin] = useState(30); // بالدقائق
+  const [audioSegments, setAudioSegments] = useState([]);
+  const [targetSubjectForAudio, setTargetSubjectForAudio] = useState('');
+  const [audioBaseName, setAudioBaseName] = useState('ريكورد المحاضرة');
+
+  // دالة قراءة مدة الملف الصوتي
+  const handleAudioUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      const audio = new Audio(url);
+      audio.onloadedmetadata = () => {
+        setAudioDuration(audio.duration);
+        setAudioFile(file);
+        setAudioSegments([]);
+        // تعيين اسم افتراضي بناءً على اسم الملف
+        setAudioBaseName(file.name.replace(/\.[^/.]+$/, "")); 
+      };
+    }
+  };
+
+  // تنسيق الوقت (ثواني إلى HH:MM:SS)
+  const formatTime = (totalSeconds) => {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = Math.floor(totalSeconds % 60);
+    return `${h > 0 ? h.toString().padStart(2, '0') + ':' : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  // توليد الأجزاء
+  const generateSegments = () => {
+    if (!audioDuration) return;
+    let segments = [];
+    if (splitMode === 'parts') {
+      const partDuration = audioDuration / splitParts;
+      for (let i = 0; i < splitParts; i++) {
+        segments.push({
+          id: i,
+          name: `${audioBaseName} - جزء ${i + 1}`,
+          start: formatTime(i * partDuration),
+          end: formatTime((i + 1) * partDuration)
+        });
+      }
+    } else {
+      const partDuration = splitTimeMin * 60; // تحويل الدقائق لثواني
+      let currentStart = 0;
+      let i = 0;
+      while (currentStart < audioDuration) {
+        let currentEnd = Math.min(currentStart + partDuration, audioDuration);
+        segments.push({
+          id: i,
+          name: `${audioBaseName} - جزء ${i + 1}`,
+          start: formatTime(currentStart),
+          end: formatTime(currentEnd)
+        });
+        currentStart = currentEnd;
+        i++;
+      }
+    }
+    setAudioSegments(segments);
+  };
+
+  // إضافة الأجزاء للمادة المحددة
+  const addSegmentsToSubject = () => {
+    if (!targetSubjectForAudio || audioSegments.length === 0) return;
+    
+    const newLectures = audioSegments.map((seg, index) => ({
+      id: Date.now() + index, 
+      name: `${seg.name} (${seg.start} إلى ${seg.end})`,
+      studied: false, listenedRecord: false, transcribed: false,
+      createdQuestions: false, solvedOwnQuestions: false, solvedNewQuestions: false,
+      reviewCount: 0
+    }));
+
+    saveSubjectsData(subjects.map(sub => 
+      sub.id.toString() === targetSubjectForAudio.toString() 
+      ? { ...sub, lectures: [...sub.lectures, ...newLectures] } 
+      : sub
+    ));
+    
+    alert('تم إضافة أجزاء الريكورد للمادة بنجاح! 🚀');
+    setCurrentView('tracker');
+    setActiveSubjectId(Number(targetSubjectForAudio));
+  };
+  // --------------------------------------------------------
 
   // حالة الوضع الليلي (Dark Mode)
   const [darkMode, setDarkMode] = useState(() => {
@@ -530,6 +621,17 @@ export default function App() {
               <h1 className="text-xl sm:text-2xl font-bold cursor-pointer" onClick={() => setCurrentView('tracker')}>لمّ المنهج</h1>
             </div>
             
+            <button 
+              onClick={() => setCurrentView('audio')}
+              className={`hidden md:flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                currentView === 'audio' 
+                ? 'bg-white text-indigo-600 shadow-sm' 
+                : (darkMode ? 'bg-slate-700 text-indigo-300 hover:bg-slate-600' : 'bg-indigo-800/50 text-indigo-100 hover:bg-indigo-800')
+              }`}
+            >
+              <Headphones size={16} /> مقسم الريكوردات
+            </button>
+
             {isAdmin && (
               <button 
                 onClick={() => setCurrentView(currentView === 'admin' ? 'tracker' : 'admin')}
@@ -660,6 +762,144 @@ export default function App() {
             )}
           </div>
         </main>
+      ) : currentView === 'audio' ? (
+      
+      /* ---------------- صفحة مقسم الصوتيات (Audio Splitter) ---------------- */
+      <main className="container mx-auto p-4 mt-6 max-w-4xl">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className={`text-3xl font-bold flex items-center gap-3 ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}>
+              <Scissors className="text-indigo-500" size={32} /> مقسم الريكوردات الذكي
+            </h2>
+            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>ارفع الريكورد الطويل، وسنقوم بتقسيمه لك لمهام صغيرة لتسهيل المذاكرة.</p>
+          </div>
+          <button onClick={() => setCurrentView('tracker')} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition ${darkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white shadow-sm text-slate-600 hover:bg-slate-50'}`}>
+            <ArrowLeft size={18} /> العودة
+          </button>
+        </div>
+
+        <div className={`rounded-3xl p-6 border shadow-sm mb-6 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+          {/* الخطوة 1: رفع الملف */}
+          <div className="mb-8">
+            <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+              <span className="bg-indigo-100 text-indigo-600 w-6 h-6 rounded-full flex items-center justify-center text-sm">1</span> 
+              اختر الريكورد
+            </h3>
+            <div className={`border-2 border-dashed rounded-2xl p-8 text-center transition ${darkMode ? 'border-slate-600 bg-slate-700/30' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}>
+              <input type="file" accept="audio/*" onChange={handleAudioUpload} className="hidden" id="audio-upload" />
+              <label htmlFor="audio-upload" className="cursor-pointer flex flex-col items-center">
+                <Headphones size={48} className={`mb-4 ${audioFile ? 'text-green-500' : (darkMode ? 'text-slate-500' : 'text-slate-400')}`} />
+                <span className={`font-medium text-lg ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                  {audioFile ? audioFile.name : 'اضغط هنا لاختيار ملف صوتي من جهازك'}
+                </span>
+                {audioDuration > 0 && (
+                  <span className="mt-2 text-sm text-green-600 font-bold bg-green-100 px-3 py-1 rounded-full">
+                    المدة الكلية: {formatTime(audioDuration)}
+                  </span>
+                )}
+              </label>
+            </div>
+          </div>
+
+          {/* الخطوة 2: إعدادات التقسيم */}
+          {audioFile && audioDuration > 0 && (
+            <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                <span className="bg-indigo-100 text-indigo-600 w-6 h-6 rounded-full flex items-center justify-center text-sm">2</span> 
+                كيف تريد التقسيم؟
+              </h3>
+              
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className={`border rounded-2xl p-5 transition cursor-pointer ${splitMode === 'parts' ? (darkMode ? 'border-indigo-500 bg-indigo-900/20' : 'border-indigo-500 bg-indigo-50/50') : (darkMode ? 'border-slate-600' : 'border-slate-200')}`} onClick={() => setSplitMode('parts')}>
+                  <div className="flex items-center gap-3 mb-4">
+                    <input type="radio" checked={splitMode === 'parts'} onChange={() => {}} className="w-5 h-5 accent-indigo-600" />
+                    <ListOrdered size={20} className={darkMode ? 'text-indigo-400' : 'text-indigo-600'} />
+                    <span className={`font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>حسب عدد الأجزاء</span>
+                  </div>
+                  {splitMode === 'parts' && (
+                    <div className="pl-8">
+                      <label className={`block text-sm mb-2 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>كم جزء تريد؟</label>
+                      <input type="number" min="2" max="20" value={splitParts} onChange={(e) => setSplitParts(Number(e.target.value))} className={`w-full rounded-xl px-4 py-2 border focus:ring-2 outline-none ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-slate-300'}`} />
+                    </div>
+                  )}
+                </div>
+
+                <div className={`border rounded-2xl p-5 transition cursor-pointer ${splitMode === 'time' ? (darkMode ? 'border-indigo-500 bg-indigo-900/20' : 'border-indigo-500 bg-indigo-50/50') : (darkMode ? 'border-slate-600' : 'border-slate-200')}`} onClick={() => setSplitMode('time')}>
+                  <div className="flex items-center gap-3 mb-4">
+                    <input type="radio" checked={splitMode === 'time'} onChange={() => {}} className="w-5 h-5 accent-indigo-600" />
+                    <Timer size={20} className={darkMode ? 'text-indigo-400' : 'text-indigo-600'} />
+                    <span className={`font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>حسب وقت محدد</span>
+                  </div>
+                  {splitMode === 'time' && (
+                    <div className="pl-8">
+                      <label className={`block text-sm mb-2 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>مدة كل جزء (بالدقائق)</label>
+                      <input type="number" min="1" max="120" value={splitTimeMin} onChange={(e) => setSplitTimeMin(Number(e.target.value))} className={`w-full rounded-xl px-4 py-2 border focus:ring-2 outline-none ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-slate-300'}`} />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-6 flex flex-col md:flex-row gap-4 items-center">
+                <input 
+                  type="text" 
+                  placeholder="اسم المحاضرة الأساسي (مثلاً: محاضرة الجراحة)"
+                  value={audioBaseName}
+                  onChange={(e) => setAudioBaseName(e.target.value)}
+                  className={`flex-1 w-full rounded-xl px-4 py-3 border focus:ring-2 outline-none ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-slate-300'}`}
+                />
+                <button onClick={generateSegments} className="w-full md:w-auto px-8 py-3 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 text-white transition flex justify-center items-center gap-2">
+                  <Scissors size={20} /> تقسيم الريكورد
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* الخطوة 3: عرض الأجزاء والحفظ */}
+          {audioSegments.length > 0 && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                <span className="bg-green-100 text-green-600 w-6 h-6 rounded-full flex items-center justify-center text-sm"><Check size={14}/></span> 
+                الأجزاء المستخرجة ({audioSegments.length})
+              </h3>
+              
+              <div className={`border rounded-2xl overflow-hidden mb-6 ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                {audioSegments.map((seg, idx) => (
+                  <div key={seg.id} className={`p-4 flex items-center justify-between ${idx !== audioSegments.length - 1 ? (darkMode ? 'border-b border-slate-700' : 'border-b border-slate-100') : ''} ${darkMode ? 'bg-slate-800' : 'bg-white'}`}>
+                    <span className={`font-medium ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>{seg.name}</span>
+                    <span className="text-sm font-mono bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg">
+                      {seg.start} ➝ {seg.end}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className={`p-6 rounded-2xl border ${darkMode ? 'bg-indigo-900/20 border-indigo-500/30' : 'bg-indigo-50 border-indigo-100'}`}>
+                <label className={`block font-bold mb-2 ${darkMode ? 'text-indigo-300' : 'text-indigo-800'}`}>أضف هذه الأجزاء إلى مادة:</label>
+                <div className="flex flex-col md:flex-row gap-3">
+                  <select 
+                    value={targetSubjectForAudio} 
+                    onChange={(e) => setTargetSubjectForAudio(e.target.value)}
+                    className={`flex-1 rounded-xl px-4 py-3 outline-none focus:ring-2 ${darkMode ? 'bg-slate-700 text-white border-slate-600 focus:ring-indigo-500' : 'bg-white border border-slate-300 focus:ring-indigo-300'}`}
+                  >
+                    <option value="" disabled>-- اختر المادة --</option>
+                    {subjects.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  <button 
+                    onClick={addSegmentsToSubject}
+                    disabled={!targetSubjectForAudio}
+                    className={`px-8 py-3 rounded-xl font-bold transition flex justify-center items-center gap-2 ${!targetSubjectForAudio ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white shadow-md'}`}
+                  >
+                    <Save size={20} /> حفظ في المادة
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+
       ) : (
 
       /* ---------------- واجهة التطبيق الرئيسية (المتعقب) ---------------- */
