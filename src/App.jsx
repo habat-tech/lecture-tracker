@@ -734,7 +734,7 @@ export default function App() {
               <div className={`p-4 rounded-xl border flex items-center justify-between cursor-pointer ${autoUploadDrive ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-slate-200 dark:border-slate-700 bg-transparent'}`} onClick={() => setAutoUploadDrive(!autoUploadDrive)}>
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center ${autoUploadDrive ? 'bg-green-100 text-green-600 dark:bg-green-800 dark:text-green-300' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'}`}>
-                    <CloudUpload size={20} />
+                    <UploadCloud size={20} />
                   </div>
                   <div>
                     <h4 className={`font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>الرفع التلقائي لـ Google Drive</h4>
@@ -766,7 +766,7 @@ export default function App() {
                         <div className="flex gap-2">
                           {part.drive_link && (
                             <a href={part.drive_link} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400 rounded-lg hover:bg-green-200 transition">
-                              <CloudUpload size={14}/> درايف
+                              <UploadCloud size={14}/> درايف
                             </a>
                           )}
                           <a href={`${HUGGING_FACE_API}${part.preview_url}`} download className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400 rounded-lg hover:bg-indigo-200 transition">
