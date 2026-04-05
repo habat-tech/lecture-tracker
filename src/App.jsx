@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Trash2, BookOpen, Check, Cloud, CloudOff, 
   Loader2, Pencil, X, Save, CheckCircle2, Clock, LayoutList, Moon, Sun,
@@ -64,6 +64,9 @@ export default function App() {
   const [adminUsersList, setAdminUsersList] = useState([]);
   const [loadingAdmin, setLoadingAdmin] = useState(false);
 
+  // مرجع لتايمر الحفظ (لمنع الضغط وتجميع التعديلات)
+  const syncTimeoutRef = useRef(null);
+
   // حالة الوضع الليلي (Dark Mode)
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -88,7 +91,14 @@ export default function App() {
       setAuthLoading(false);
       return;
     }
+
+    // صمام أمان لتسجيل الدخول: فتح الموقع إجبارياً بعد 5 ثوانٍ إن طال التحقق
+    const authTimeout = setTimeout(() => {
+      setAuthLoading(false);
+    }, 5000);
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      clearTimeout(authTimeout);
       setUser(currentUser);
       setAuthLoading(false);
 
@@ -106,7 +116,11 @@ export default function App() {
         }
       }
     });
-    return () => unsubscribe();
+
+    return () => {
+      clearTimeout(authTimeout);
+      unsubscribe();
+    };
   }, []);
 
   const handleGoogleLogin = async () => {
@@ -151,6 +165,10 @@ export default function App() {
       setIsLoaded(true);
       return;
     }
+
+    let isComponentMounted = true;
+    let unsubscribeSnapshot = () => {};
+    let dataTimeout;
     
     // 🔥 التحميل الفوري من الكاش (Smart Caching) للقضاء على التأخير
     const cachedData = localStorage.getItem(`tracker_data_${user.uid}`);
@@ -162,13 +180,21 @@ export default function App() {
         setIsLoaded(true); // إنهاء شاشة التحميل فوراً لو الداتا موجودة في الكاش
       } catch(e) {
         console.error("Cache parsing error", e);
+        setIsLoaded(false);
       }
     } else {
-      setIsLoaded(false); // لو مفيش كاش، هنظهر شاشة التحميل لحد ما السحابة ترد
+      setIsLoaded(false); 
+      // 🔥 صمام أمان (Timeout) للبيانات: لو السحابة اتأخرت أكتر من 3.5 ثواني نفتح الموقع إجبارياً
+      dataTimeout = setTimeout(() => {
+        if (isComponentMounted) {
+          console.warn("Firebase timeout, forcing load.");
+          const defaultSubjects = [{ id: 1, name: 'المادة الأولى (مثال)', lectures: [] }];
+          setSubjects(defaultSubjects);
+          setActiveSubjectId(1);
+          setIsLoaded(true);
+        }
+      }, 3500);
     }
-
-    let unsubscribeSnapshot = () => {};
-    let isComponentMounted = true;
 
     // دالة للاتصال بقاعدة البيانات الخاصة بالمستخدم
     const connectToFirebase = () => {
@@ -177,12 +203,21 @@ export default function App() {
       const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'trackerData', 'main');
       
       unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
+        if (dataTimeout) clearTimeout(dataTimeout); // إلغاء صمام الأمان لو الداتا وصلت بنجاح
+
         if (docSnap.exists() && docSnap.data().subjects) {
           const loadedSubjects = docSnap.data().subjects;
-          setSubjects(loadedSubjects);
           
           // تحديث الكاش بالبيانات الجديدة القادمة من السحابة
           localStorage.setItem(`tracker_data_${user.uid}`, JSON.stringify(loadedSubjects));
+
+          // نمنع تحديث الشاشة الوهمي لو الداتا اللي جاية من السيرفر هي هي اللي قدامك (بيمنع التقطيع)
+          setSubjects(prevSubjects => {
+            if (JSON.stringify(prevSubjects) === JSON.stringify(loadedSubjects)) {
+              return prevSubjects;
+            }
+            return loadedSubjects;
+          });
           
           setActiveSubjectId(prev => {
             if (prev && loadedSubjects.some(s => s.id === prev)) return prev;
@@ -197,11 +232,13 @@ export default function App() {
         setIsLoaded(true); // إخفاء شاشة التحميل
       }, (error) => {
         console.error("Connection dropped, reconnecting...", error);
+        if (dataTimeout) clearTimeout(dataTimeout);
+        setIsLoaded(true); // افتح الموقع حتى لو في إيرور
         if (isComponentMounted) {
           setTimeout(() => {
             unsubscribeSnapshot();
             connectToFirebase();
-          }, 2500);
+          }, 3000);
         }
       });
     };
@@ -219,6 +256,7 @@ export default function App() {
 
     return () => {
       isComponentMounted = false;
+      if (dataTimeout) clearTimeout(dataTimeout);
       unsubscribeSnapshot();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
@@ -244,9 +282,9 @@ export default function App() {
     }
   }, [currentView, isAdmin]);
 
-  // تحديث البيانات محلياً ورفعها للسحابة
-  const saveSubjectsData = async (newSubjects) => {
-    setSubjects(newSubjects);
+  // تحديث البيانات محلياً ورفعها للسحابة بذكاء
+  const saveSubjectsData = (newSubjects) => {
+    setSubjects(newSubjects); // تحديث الشاشة فوراً في جزء من الثانية
     
     // حفظ في الكاش لسرعة التحميل (مفصول لكل مستخدم باستخدام الـ UID)
     if (user) {
@@ -256,15 +294,25 @@ export default function App() {
     }
 
     if (!user || !db) return;
+
     setIsSyncing(true);
-    try {
-      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'trackerData', 'main');
-      await setDoc(docRef, { subjects: newSubjects }, { merge: true });
-    } catch (error) {
-      console.error("Save error:", error);
-    } finally {
-      setIsSyncing(false);
+
+    // إلغاء أي أمر حفظ قديم لو المستخدم ضغط بسرعة (تجميع الطلبات)
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
     }
+
+    // نأخر الحفظ للسحابة ثانية واحدة عشان نبعت كل حاجة مرة واحدة
+    syncTimeoutRef.current = setTimeout(async () => {
+      try {
+        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'trackerData', 'main');
+        await setDoc(docRef, { subjects: newSubjects }, { merge: true });
+      } catch (error) {
+        console.error("Save error:", error);
+      } finally {
+        setIsSyncing(false);
+      }
+    }, 1000); // الانتظار 1000 ملي ثانية (ثانية)
   };
 
   // ---------------- إدارة المواد ----------------
