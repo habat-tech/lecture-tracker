@@ -4,7 +4,7 @@ import {
   Loader2, Pencil, X, Save, CheckCircle, Clock, List, Moon, Sun,
   LogOut, Shield, Users, User, Calendar, Timer, Play, Pause, RotateCcw, 
   Settings, BarChart, Coffee, Brain, Trophy, Download,
-  UploadCloud, Link as LinkIcon, Server, RefreshCw, UserCheck, UserX, AlertCircle
+  UploadCloud, Link as LinkIcon, Server, RefreshCw, UserCheck, UserX, AlertCircle, FileAudio, PlayCircle, DownloadCloud
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -97,10 +97,14 @@ export default function App() {
   // ==========================================
   // 4. حالات نظام الرفع والأتمتة السحابية
   // ==========================================
+  const [inputType, setInputType] = useState('local'); // 'url' or 'local'
   const [sourceUrl, setSourceUrl] = useState('');
+  const [localFile, setLocalFile] = useState(null);
   const [splitMethod, setSplitMethod] = useState('time'); // 'time' or 'parts'
   const [splitValueTime, setSplitValueTime] = useState('00:30:00');
   const [splitValueParts, setSplitValueParts] = useState('4');
+  const [autoUploadDrive, setAutoUploadDrive] = useState(false);
+  
   const [isProcessingServer, setIsProcessingServer] = useState(false);
   const [serverResult, setServerResult] = useState(null);
 
@@ -108,7 +112,6 @@ export default function App() {
   // 5. التأثيرات الجانبية (UseEffects) والوظائف
   // ==========================================
   
-  // الوضع الليلي
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('darkMode') === 'true';
@@ -125,7 +128,6 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // PWA & iOS Detection (لتثبيت التطبيق)
   useEffect(() => {
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
@@ -148,11 +150,10 @@ export default function App() {
     } else if (isIOS) {
       alert('لتثبيت التطبيق على الآيفون 📱:\n1. اضغط على زر المشاركة (Share) في المتصفح أسفل الشاشة.\n2. اختر "إضافة للشاشة الرئيسية" (Add to Home Screen).');
     } else {
-      alert('التطبيق مثبت بالفعل، أو المتصفح لا يدعم التثبيت المباشر. تأكد من فتح الموقع من جوجل كروم أو سفاري.');
+      alert('التطبيق مثبت بالفعل، أو المتصفح لا يدعم التثبيت المباشر. تأكد من فتح الموقع من جوجل كروم.');
     }
   };
 
-  // تسجيل الدخول والتحقق من الصلاحيات
   useEffect(() => {
     if (!auth) return setAuthLoading(false);
     const authTimeout = setTimeout(() => setAuthLoading(false), 5000);
@@ -164,7 +165,6 @@ export default function App() {
 
       if (currentUser && db) {
         const isOwner = currentUser.email === ADMIN_EMAIL;
-
         const userRef = doc(db, 'artifacts', appId, 'usersList', currentUser.uid);
         onSnapshot(userRef, (docSnap) => {
           if (docSnap.exists()) {
@@ -207,7 +207,6 @@ export default function App() {
     } catch (error) { console.error(error); }
   };
 
-  // جلب ومزامنة بيانات المواد والمحاضرات والإحصائيات
   useEffect(() => {
     if (authLoading) return;
     if (!user || !db) {
@@ -293,7 +292,6 @@ export default function App() {
     };
   }, [user, authLoading]);
 
-  // جلب بيانات جميع المستخدمين للوحة الشرف والمدير
   useEffect(() => {
     if ((currentView === 'admin' && isAdmin) || currentView === 'leaderboard') {
       if (!db) return;
@@ -313,7 +311,6 @@ export default function App() {
     }
   }, [currentView, isAdmin]);
 
-  // المزامنة الذكية للمستخدم (Optimistic UI)
   const saveDataAndSync = (newSubjects, newStats) => {
     setSubjects(newSubjects); 
     setStats(newStats);
@@ -403,27 +400,33 @@ export default function App() {
   };
 
   // ==========================================
-  // 7. دوال الأتمتة (الاتصال بـ Hugging Face)
+  // 7. دوال الأتمتة السحابية الشاملة
   // ==========================================
   const handleServerProcess = async (e) => {
     e.preventDefault();
-    if (!sourceUrl.trim()) return alert('أدخل الرابط أولاً!');
+    if (inputType === 'url' && !sourceUrl.trim()) return alert('أدخل الرابط أولاً!');
+    if (inputType === 'local' && !localFile) return alert('اختر ملفاً من جهازك أولاً!');
     if (!HUGGING_FACE_API.includes('hf.space')) return alert('يرجى التأكد من وضع رابط سيرفر Hugging Face الصحيح في كود التطبيق.');
 
     setIsProcessingServer(true);
     setServerResult(null);
 
-    const payload = {
-      url: sourceUrl,
-      split_mode: splitMethod,
-      split_value: splitMethod === 'time' ? splitValueTime : splitValueParts
-    };
-
     try {
+      const formData = new FormData();
+      formData.append('inputType', inputType);
+      formData.append('split_mode', splitMethod);
+      formData.append('split_value', splitMethod === 'time' ? splitValueTime : splitValueParts);
+      formData.append('auto_upload', autoUploadDrive ? 'true' : 'false');
+      
+      if (inputType === 'local' && localFile) {
+        formData.append('file', localFile);
+      } else {
+        formData.append('url', sourceUrl);
+      }
+
       const response = await fetch(`${HUGGING_FACE_API}/process-audio`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: formData 
       });
 
       if (!response.ok) {
@@ -435,7 +438,7 @@ export default function App() {
       setServerResult(data);
     } catch (error) {
       console.error("API Error:", error);
-      alert(`حدث خطأ أثناء الاتصال بالسيرفر!\n\nتفاصيل الخطأ التقني: ${error.message}\nتأكد أن السيرفر يعمل ولا يزال في وضع Running.`);
+      alert(`حدث خطأ أثناء المعالجة!\n\nتفاصيل الخطأ التقني: ${error.message}\nتأكد أن السيرفر يعمل بشكل صحيح.`);
     } finally {
       setIsProcessingServer(false);
     }
@@ -652,32 +655,57 @@ export default function App() {
       {/* ---------------- الشاشات الفرعية ---------------- */}
 
       {currentView === 'automation' ? (
-        // --- 1. المعالج السحابي ---
         <main className="container mx-auto p-4 mt-6 max-w-4xl animate-in fade-in slide-in-from-bottom-4">
+          {/* --- 1. المعالج السحابي --- */}
           <div className="mb-8">
             <h2 className={`text-3xl font-bold flex items-center gap-3 ${darkMode ? 'text-amber-400' : 'text-amber-600'}`}><Server size={36} /> المعالج السحابي الذكي</h2>
-            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>ضع رابط المحاضرة، وسيقوم سيرفر Hugging Face بتقطيعها ورفعها إلى Google Drive تلقائياً!</p>
+            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>اقطع المحاضرات الصوتية، استمع للمعاينة، وارفعها لجوجل درايف بضغطة زر!</p>
           </div>
-          <div className={`rounded-3xl p-8 border shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+          
+          <div className={`rounded-3xl p-6 md:p-8 border shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            
+            <div className="flex mb-8 bg-slate-100 dark:bg-slate-700 p-1 rounded-xl">
+              <button 
+                onClick={() => { setInputType('local'); setServerResult(null); }}
+                className={`flex-1 py-3 px-4 rounded-lg font-bold flex items-center justify-center gap-2 transition-all ${inputType === 'local' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`}
+              >
+                <FileAudio size={20} /> رفع من الجهاز (آمن وسريع)
+              </button>
+              <button 
+                onClick={() => { setInputType('url'); setServerResult(null); }}
+                className={`flex-1 py-3 px-4 rounded-lg font-bold flex items-center justify-center gap-2 transition-all ${inputType === 'url' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`}
+              >
+                <LinkIcon size={20} /> رابط (يوتيوب)
+              </button>
+            </div>
+
             <form onSubmit={handleServerProcess} className="space-y-6">
               
-              <div className={`p-4 rounded-xl flex items-start gap-3 border ${darkMode ? 'bg-blue-900/20 border-blue-800 text-blue-300' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
-                <AlertCircle className="shrink-0 mt-0.5" size={20} />
-                <div className="text-sm">
-                  <strong>معلومة هامة:</strong> السيرفر الآن يعتمد على روابط <strong>YouTube</strong> بالكامل أو الروابط المباشرة فقط. تأكد من إدخال الرابط الصحيح لليوتيوب ليبدأ القص مباشرة.
+              {inputType === 'url' ? (
+                <div className="animate-in fade-in">
+                  <label className="block font-bold mb-2">رابط المحاضرة (يوتيوب أو رابط مباشر):</label>
+                  <div className="relative">
+                    <LinkIcon className="absolute right-4 top-3.5 text-slate-400" size={20} />
+                    <input type="url" required value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://youtube.com/..." className={`w-full rounded-xl pr-12 pl-4 py-3 border focus:ring-2 outline-none ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-300'}`} />
+                  </div>
                 </div>
-              </div>
-
-              <div>
-                <label className="block font-bold mb-2">رابط المحاضرة (يوتيوب أو رابط مباشر):</label>
-                <div className="relative">
-                  <LinkIcon className="absolute right-4 top-3.5 text-slate-400" size={20} />
-                  <input type="url" required value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://youtube.com/..." className={`w-full rounded-xl pr-12 pl-4 py-3 border focus:ring-2 outline-none ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-300'}`} />
+              ) : (
+                <div className="animate-in fade-in">
+                  <label className="block font-bold mb-2">اختر ملف صوت/فيديو من جهازك:</label>
+                  <div className={`border-2 border-dashed rounded-2xl p-8 text-center transition ${darkMode ? 'border-slate-600 bg-slate-700/30' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}>
+                    <input type="file" required accept="audio/*,video/*" onChange={(e) => setLocalFile(e.target.files[0])} className="hidden" id="local-upload" />
+                    <label htmlFor="local-upload" className="cursor-pointer flex flex-col items-center">
+                      <FileAudio size={48} className={`mb-4 ${localFile ? 'text-green-500' : (darkMode ? 'text-slate-500' : 'text-slate-400')}`} />
+                      <span className={`font-medium text-lg ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                        {localFile ? localFile.name : 'اضغط هنا لاختيار ملف من جهازك'}
+                      </span>
+                    </label>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className={`p-6 rounded-2xl border ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-indigo-50/50 border-indigo-100'}`}>
-                <h3 className="font-bold mb-4 flex items-center gap-2"><Timer size={18}/> نظام تقطيع الصوت</h3>
+                <h3 className="font-bold mb-4 flex items-center gap-2"><Timer size={18}/> نظام التقطيع</h3>
                 <div className="grid md:grid-cols-2 gap-4">
                   <label className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer ${splitMethod === 'time' ? 'border-indigo-500 bg-indigo-500/10' : (darkMode ? 'border-slate-600' : 'border-slate-200')}`}>
                     <input type="radio" checked={splitMethod === 'time'} onChange={() => setSplitMethod('time')} className="w-5 h-5 accent-indigo-500" />
@@ -702,17 +730,52 @@ export default function App() {
                   )}
                 </div>
               </div>
-              <button type="submit" disabled={isProcessingServer} className={`w-full py-4 rounded-xl font-black text-lg transition flex justify-center items-center gap-3 shadow-lg ${isProcessingServer ? 'bg-slate-500 cursor-not-allowed' : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white'}`}>
-                {isProcessingServer ? <><Loader2 className="animate-spin" size={24} /> جاري المعالجة والرفع للسحابة...</> : <><UploadCloud size={24} /> بدء المعالجة والرفع لـ Google Drive</>}
+
+              <div className={`p-4 rounded-xl border flex items-center justify-between cursor-pointer ${autoUploadDrive ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-slate-200 dark:border-slate-700 bg-transparent'}`} onClick={() => setAutoUploadDrive(!autoUploadDrive)}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${autoUploadDrive ? 'bg-green-100 text-green-600 dark:bg-green-800 dark:text-green-300' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'}`}>
+                    <CloudUpload size={20} />
+                  </div>
+                  <div>
+                    <h4 className={`font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>الرفع التلقائي لـ Google Drive</h4>
+                    <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>السيرفر هيحتفظ بنسخة في درايف الخاص بك</p>
+                  </div>
+                </div>
+                <div className={`w-12 h-6 rounded-full relative transition-colors ${autoUploadDrive ? 'bg-green-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${autoUploadDrive ? 'left-1' : 'right-1'}`}></div>
+                </div>
+              </div>
+
+              <button type="submit" disabled={isProcessingServer} className={`w-full py-4 rounded-xl font-black text-lg transition flex justify-center items-center gap-3 shadow-lg ${isProcessingServer ? 'bg-slate-500 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white'}`}>
+                {isProcessingServer ? <><Loader2 className="animate-spin" size={24} /> جاري معالجة وتقطيع المحاضرة...</> : <><UploadCloud size={24} /> بدء المعالجة {autoUploadDrive ? 'والرفع لدرايف' : ''}</>}
               </button>
             </form>
+
             {serverResult && (
-              <div className={`mt-8 p-6 rounded-2xl border bg-green-500/10 border-green-500/30 animate-in zoom-in`}>
-                <h3 className="text-green-600 dark:text-green-400 font-black text-xl flex items-center gap-2 mb-4"><CheckCircle size={24}/> تمت العملية بنجاح!</h3>
-                <p className="font-bold mb-4">{serverResult.title}</p>
-                <div className="space-y-2">
-                  {serverResult.links.map((link, idx) => (
-                    <a key={idx} href={link} target="_blank" rel="noreferrer" className="block p-3 bg-white dark:bg-slate-800 rounded-lg shadow-sm text-indigo-600 font-mono text-sm hover:underline">🔗 الجزء {idx + 1}: مشاهدة في Google Drive</a>
+              <div className={`mt-8 p-6 rounded-2xl border bg-slate-50 dark:bg-slate-800 dark:border-slate-700 animate-in zoom-in`}>
+                <h3 className="text-green-600 dark:text-green-400 font-black text-xl flex items-center gap-2 mb-2"><CheckCircle size={24}/> تمت العملية بنجاح!</h3>
+                <p className="font-bold mb-6 text-slate-700 dark:text-slate-300">{serverResult.title}</p>
+                
+                <div className="space-y-4">
+                  {serverResult.parts.map((part, idx) => (
+                    <div key={idx} className="p-4 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
+                          <PlayCircle size={18}/> {part.name}
+                        </span>
+                        <div className="flex gap-2">
+                          {part.drive_link && (
+                            <a href={part.drive_link} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400 rounded-lg hover:bg-green-200 transition">
+                              <CloudUpload size={14}/> درايف
+                            </a>
+                          )}
+                          <a href={`${HUGGING_FACE_API}${part.preview_url}`} download className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400 rounded-lg hover:bg-indigo-200 transition">
+                            <DownloadCloud size={14}/> تحميل
+                          </a>
+                        </div>
+                      </div>
+                      <audio controls className="w-full h-10 rounded-full outline-none" src={`${HUGGING_FACE_API}${part.preview_url}`}></audio>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -721,8 +784,8 @@ export default function App() {
         </main>
 
       ) : currentView === 'pomodoro' ? (
-        // --- 2. بومودورو والإحصائيات ---
         <main className="container mx-auto p-4 mt-6 max-w-5xl">
+          {/* --- 2. بومودورو والإحصائيات --- */}
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className={`text-3xl font-bold flex items-center gap-3 ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}><Timer className="text-indigo-500" size={32} /> مؤقت المذاكرة</h2>
@@ -805,8 +868,8 @@ export default function App() {
         </main>
 
       ) : currentView === 'leaderboard' ? (
-        // --- 3. لوحة الشرف والمنافسة ---
         <main className="container mx-auto p-4 mt-6 max-w-4xl">
+          {/* --- 3. لوحة الشرف والمنافسة --- */}
           <div className="mb-8">
             <h2 className={`text-3xl font-bold flex items-center gap-3 ${darkMode ? 'text-yellow-400' : 'text-amber-600'}`}><Trophy size={36} /> لوحة الشرف لأبطال الدفعة</h2>
             <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>تنافس مع زملائك وكن من الأوائل! الترتيب مبني على إجمالي ساعات المذاكرة.</p>
@@ -862,8 +925,8 @@ export default function App() {
         </main>
 
       ) : currentView === 'admin' && isAdmin ? (
-        // --- 4. لوحة تحكم الإدارة ---
         <main className="container mx-auto p-4 mt-6">
+          {/* --- 4. لوحة تحكم الإدارة --- */}
           <div className={`rounded-3xl p-6 md:p-8 border shadow-sm mb-6 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
             <div className="flex items-center gap-3 mb-8 border-b pb-4 border-slate-200 dark:border-slate-700">
               <div className="p-3 bg-red-100 text-red-600 rounded-xl"><Shield size={32} /></div>
@@ -931,10 +994,8 @@ export default function App() {
 
       ) : (
 
-      // --- 5. واجهة المتعقب الأساسية (Tracker) كاملة ---
       <main className="container mx-auto p-4 flex flex-col lg:flex-row gap-6 mt-6">
-        
-        {/* الشريط الجانبي (قائمة المواد) */}
+        {/* --- 5. واجهة المتعقب الأساسية (Tracker) --- */}
         <aside className={`w-full lg:w-1/4 rounded-2xl p-4 border h-fit sticky top-24 ${darkMode ? 'bg-slate-800 border-slate-700 shadow-none' : 'bg-white border-slate-200 shadow-sm'}`}>
           <h2 className={`text-lg font-bold mb-4 flex items-center gap-2 border-b pb-3 ${darkMode ? 'text-slate-200 border-slate-700' : 'text-slate-700 border-slate-200'}`}>
             <List size={20} className={darkMode ? 'text-indigo-400' : 'text-indigo-500'}/> المواد الدراسية
@@ -975,12 +1036,10 @@ export default function App() {
           </ul>
         </aside>
 
-        {/* مساحة المحاضرات والمهام */}
         <section className="w-full lg:w-3/4">
           {activeSubject ? (
             <div className="space-y-6">
               
-              {/* هيدر المحاضرات */}
               <div className={`rounded-2xl p-5 md:p-6 border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                   <div className="w-full md:w-1/2">
@@ -1003,10 +1062,8 @@ export default function App() {
                 </div>
               </div>
 
-              {/* قائمة المحاضرات */}
               {activeSubject.lectures.length > 0 ? (
                 <>
-                  {/* عرض الموبايل (بطاقات) */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:hidden">
                     {activeSubject.lectures.map(lecture => {
                       const isDone = isFullyCompleted(lecture);
@@ -1055,7 +1112,6 @@ export default function App() {
                     })}
                   </div>
 
-                  {/* عرض الشاشات الكبيرة (جدول) */}
                   <div className={`hidden lg:block rounded-2xl border overflow-hidden ${darkMode ? 'bg-slate-800 border-slate-700 shadow-none' : 'bg-white border-slate-200 shadow-sm'}`}>
                     <div className="overflow-x-auto">
                       <table className="w-full text-right border-collapse min-w-[850px]">
@@ -1131,7 +1187,7 @@ export default function App() {
               <div className="text-center">
                 <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 ${darkMode ? 'bg-indigo-900/30' : 'bg-indigo-50'}`}><List size={40} className={darkMode ? 'text-indigo-400' : 'text-indigo-400'} /></div>
                 <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>أهلاً بك في لمّ المنهج! 👋</h2>
-                <p className={`max-w-md mx-auto ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>قم باختيار مادة من القائمة الجانبية أو أضف مادة دراسية جديدة للبدء في تنظيم وقتك بنجاح.</p>
+                <p className={`max-w-md mx-auto ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>قم باختيار مادة من القائمة الجانبية أو أضف مادة دراسية جديدة للبدء في تنظيم وقتك ولم المنهج بنجاح.</p>
               </div>
             </div>
           )}
