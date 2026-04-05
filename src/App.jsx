@@ -112,10 +112,13 @@ export default function App() {
   const handleGoogleLogin = async () => {
     try {
       const provider = new GoogleAuthProvider();
+      // Force account selection to avoid issues with multiple accounts
+      provider.setCustomParameters({ prompt: 'select_account' });
       await signInWithPopup(auth, provider);
     } catch (error) {
       console.error("Login Failed", error);
-      alert("حدث خطأ أثناء تسجيل الدخول. تأكد من تفعيل Google Auth في إعدادات Firebase.");
+      // إظهار رسالة الخطأ الأصلية لتسهيل الحل
+      alert(`حدث خطأ أثناء تسجيل الدخول:\n${error.message}\n\nتأكد من:\n1. إضافة رابط موقعك في (Authorized domains) في إعدادات فايربيس.\n2. إغلاق مانع الإعلانات (Shields) في متصفح Brave أو السماح بالـ Popups.`);
     }
   };
 
@@ -135,13 +138,37 @@ export default function App() {
     if (authLoading) return;
     
     if (!user || !db) {
+      const localData = localStorage.getItem('tracker_data');
+      if (localData) {
+        const parsed = JSON.parse(localData);
+        setSubjects(parsed);
+        setActiveSubjectId(parsed.length > 0 ? parsed[0].id : null);
+      } else {
+        const defaultSubjects = [{ id: 1, name: 'المادة الأولى (مثال)', lectures: [] }];
+        setSubjects(defaultSubjects);
+        setActiveSubjectId(1);
+      }
       setIsLoaded(true);
       return;
     }
     
+    // 🔥 التحميل الفوري من الكاش (Smart Caching) للقضاء على التأخير
+    const cachedData = localStorage.getItem(`tracker_data_${user.uid}`);
+    if (cachedData) {
+      try {
+        const parsed = JSON.parse(cachedData);
+        setSubjects(parsed);
+        setActiveSubjectId(prev => prev || (parsed.length > 0 ? parsed[0].id : null));
+        setIsLoaded(true); // إنهاء شاشة التحميل فوراً لو الداتا موجودة في الكاش
+      } catch(e) {
+        console.error("Cache parsing error", e);
+      }
+    } else {
+      setIsLoaded(false); // لو مفيش كاش، هنظهر شاشة التحميل لحد ما السحابة ترد
+    }
+
     let unsubscribeSnapshot = () => {};
     let isComponentMounted = true;
-    setIsLoaded(false);
 
     // دالة للاتصال بقاعدة البيانات الخاصة بالمستخدم
     const connectToFirebase = () => {
@@ -154,16 +181,20 @@ export default function App() {
           const loadedSubjects = docSnap.data().subjects;
           setSubjects(loadedSubjects);
           
+          // تحديث الكاش بالبيانات الجديدة القادمة من السحابة
+          localStorage.setItem(`tracker_data_${user.uid}`, JSON.stringify(loadedSubjects));
+          
           setActiveSubjectId(prev => {
             if (prev && loadedSubjects.some(s => s.id === prev)) return prev;
             return loadedSubjects.length > 0 ? loadedSubjects[0].id : null;
           });
-        } else {
+        } else if (!cachedData) {
+          // في حالة مستخدم جديد ليس لديه كاش أو سحابة
           const defaultSubjects = [{ id: 1, name: 'المادة الأولى (مثال)', lectures: [] }];
           setSubjects(defaultSubjects);
           setActiveSubjectId(1);
         }
-        setIsLoaded(true);
+        setIsLoaded(true); // إخفاء شاشة التحميل
       }, (error) => {
         console.error("Connection dropped, reconnecting...", error);
         if (isComponentMounted) {
@@ -216,6 +247,13 @@ export default function App() {
   // تحديث البيانات محلياً ورفعها للسحابة
   const saveSubjectsData = async (newSubjects) => {
     setSubjects(newSubjects);
+    
+    // حفظ في الكاش لسرعة التحميل (مفصول لكل مستخدم باستخدام الـ UID)
+    if (user) {
+      localStorage.setItem(`tracker_data_${user.uid}`, JSON.stringify(newSubjects));
+    } else {
+      localStorage.setItem('tracker_data', JSON.stringify(newSubjects));
+    }
 
     if (!user || !db) return;
     setIsSyncing(true);
