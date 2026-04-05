@@ -4,7 +4,7 @@ import {
   Loader2, Pencil, X, Save, CheckCircle, Clock, List, Moon, Sun,
   LogOut, Shield, Users, User, Calendar, Timer, Play, Pause, RotateCcw, 
   Settings, BarChart, Coffee, Brain, Trophy, Download,
-  UploadCloud, Link as LinkIcon, Server, RefreshCw, UserCheck, UserX
+  UploadCloud, Link as LinkIcon, Server, RefreshCw, UserCheck, UserX, AlertCircle
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -426,12 +426,17 @@ export default function App() {
         body: JSON.stringify(payload)
       });
 
-      if (!response.ok) throw new Error('فشل السيرفر في معالجة الطلب.');
+      if (!response.ok) {
+        // محاولة استخراج رسالة الخطأ من السيرفر
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || 'فشل السيرفر في معالجة الطلب.');
+      }
+
       const data = await response.json();
       setServerResult(data);
     } catch (error) {
-      console.error(error);
-      alert('حدث خطأ! تأكد أن سيرفر المعالجة يعمل بشكل صحيح وأن الرابط صالح.');
+      console.error("API Error:", error);
+      alert(`حدث خطأ أثناء الاتصال بالسيرفر!\n\nالأسباب المحتملة:\n1- الرابط خاص أو غير صحيح (إذا كان الرابط من تليجرام، يجب أن يكون من "قناة عامة" Public Channel مثل t.me/channelname/123).\n2- سيرفر Hugging Face فيه مشكلة أو في وضع السكون.\n\nتفاصيل الخطأ التقني: ${error.message}`);
     } finally {
       setIsProcessingServer(false);
     }
@@ -652,17 +657,27 @@ export default function App() {
         <main className="container mx-auto p-4 mt-6 max-w-4xl animate-in fade-in slide-in-from-bottom-4">
           <div className="mb-8">
             <h2 className={`text-3xl font-bold flex items-center gap-3 ${darkMode ? 'text-amber-400' : 'text-amber-600'}`}><Server size={36} /> المعالج السحابي الذكي</h2>
-            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>ضع رابط المحاضرة، وسيقوم سيرفر Hugging Face بتقطيعها ورفعها إلى Google Drive تلقائياً!</p>
+            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>ضع رابط المحاضرة وسيقوم سيرفر Hugging Face بتقطيعها ورفعها إلى Google Drive تلقائياً!</p>
           </div>
           <div className={`rounded-3xl p-8 border shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-            <form onSubmit={handleServerProcess} className="space-y-8">
-              <div>
-                <label className="block font-bold mb-2">رابط المحاضرة (URL):</label>
-                <div className="relative">
-                  <LinkIcon className="absolute right-4 top-3.5 text-slate-400" size={20} />
-                  <input type="url" required value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://youtube.com/..." className={`w-full rounded-xl pr-12 pl-4 py-3 border focus:ring-2 outline-none ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-300'}`} />
+            <form onSubmit={handleServerProcess} className="space-y-6">
+              
+              <div className={`p-4 rounded-xl flex items-start gap-3 border ${darkMode ? 'bg-blue-900/20 border-blue-800 text-blue-300' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
+                <AlertCircle className="shrink-0 mt-0.5" size={20} />
+                <div className="text-sm">
+                  <strong>معلومة هامة للروابط:</strong> يمكنك وضع أي رابط مباشر أو رابط يوتيوب. 
+                  <br/>لروابط <strong>تليجرام</strong>، يجب أن يكون الرابط من <strong>قناة عامة (Public Channel)</strong> لتتمكن الأداة من الوصول إليه (مثل: <code>https://t.me/channelname/123</code>). الروابط الخاصة غير مدعومة.
                 </div>
               </div>
+
+              <div>
+                <label className="block font-bold mb-2">رابط المحاضرة (يوتيوب، درايف، تليجرام عام):</label>
+                <div className="relative">
+                  <LinkIcon className="absolute right-4 top-3.5 text-slate-400" size={20} />
+                  <input type="url" required value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://youtube.com/... أو https://t.me/..." className={`w-full rounded-xl pr-12 pl-4 py-3 border focus:ring-2 outline-none ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-300'}`} />
+                </div>
+              </div>
+
               <div className={`p-6 rounded-2xl border ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-indigo-50/50 border-indigo-100'}`}>
                 <h3 className="font-bold mb-4 flex items-center gap-2"><Timer size={18}/> نظام تقطيع الصوت</h3>
                 <div className="grid md:grid-cols-2 gap-4">
