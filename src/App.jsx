@@ -1137,7 +1137,7 @@ export default function App() {
                                     </div>
                                   ) : (
                                     <div className="flex items-center gap-2 group/name">
-                                      {isDone && <CheckCircle size={16} className="text-green-500 shrink-0" />}
+                                      {isDone && <Check Circle size={16} className="text-green-500 shrink-0" />}
                                       <span className={`truncate max-w-[180px] ${isDone ? (darkMode ? 'text-slate-500 line-through decoration-green-500' : 'text-slate-500 line-through decoration-green-400') : (darkMode ? 'text-slate-200' : 'text-slate-800')}`}>{lecture.name}</span>
                                     </div>
                                   )}
