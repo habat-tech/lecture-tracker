@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Plus, Trash2, BookOpen, Check, Cloud, CloudOff, 
-  Loader2, Pencil, X, Save, CheckCircle2, Clock, LayoutList, Moon, Sun
+  Loader2, Pencil, X, Save, CheckCircle2, Clock, LayoutList, Moon, Sun,
+  LogOut, Shield, Users, User, Calendar
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { 
+  getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut 
+} from 'firebase/auth';
+import { 
+  getFirestore, doc, setDoc, onSnapshot, collection, getDocs 
+} from 'firebase/firestore';
 
 // إعدادات Firebase الخاصة بمشروعك الحقيقي
 const firebaseConfig = {
@@ -17,6 +22,9 @@ const firebaseConfig = {
   appId: "1:804793313202:web:bbdf4798380879d59466ab",
   measurementId: "G-J67PJTJEB5"
 };
+
+// ⚠️ ضع إيميلك الشخصي هنا لكي يعتبرك الموقع "المدير" ويظهر لك لوحة التحكم
+const ADMIN_EMAIL = "ahmed.ragab.alproda@gmail.com"; 
 
 // تهيئة Firebase
 let app, auth, db, appId;
@@ -30,6 +38,12 @@ try {
 }
 
 export default function App() {
+  // حالة تسجيل الدخول والمدير
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [currentView, setCurrentView] = useState('tracker'); // 'tracker' or 'admin'
+  const isAdmin = user && user.email === ADMIN_EMAIL;
+
   // الحالة الأساسية للمواد والمحاضرات
   const [subjects, setSubjects] = useState([]);
   const [activeSubjectId, setActiveSubjectId] = useState(null);
@@ -43,9 +57,12 @@ export default function App() {
   const [editingLectureName, setEditingLectureName] = useState('');
 
   // حالات السحابة (Firebase)
-  const [user, setUser] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+
+  // بيانات لوحة التحكم
+  const [adminUsersList, setAdminUsersList] = useState([]);
+  const [loadingAdmin, setLoadingAdmin] = useState(false);
 
   // حالة الوضع الليلي (Dark Mode)
   const [darkMode, setDarkMode] = useState(() => {
@@ -65,46 +82,68 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // 1. تسجيل الدخول
+  // 1. إدارة تسجيل الدخول بجوجل
   useEffect(() => {
     if (!auth) {
-      setIsLoaded(true);
+      setAuthLoading(false);
       return;
     }
-    const initAuth = async () => {
-      try {
-        await signInAnonymously(auth);
-      } catch (error) {
-        console.error("Auth Error", error);
-        setIsLoaded(true);
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+
+      if (currentUser && db) {
+        // حفظ بيانات المستخدم في السحابة لكي يراها المدير في لوحة التحكم
+        try {
+          await setDoc(doc(db, 'artifacts', appId, 'usersList', currentUser.uid), {
+            name: currentUser.displayName || 'بدون اسم',
+            email: currentUser.email || 'بدون إيميل',
+            photoURL: currentUser.photoURL || '',
+            lastLogin: new Date().toISOString()
+          }, { merge: true });
+        } catch (e) {
+          console.error("Error saving user info: ", e);
+        }
       }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
+    });
     return () => unsubscribe();
   }, []);
 
+  const handleGoogleLogin = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      console.error("Login Failed", error);
+      alert("حدث خطأ أثناء تسجيل الدخول. تأكد من تفعيل Google Auth في إعدادات Firebase.");
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setSubjects([]);
+      setActiveSubjectId(null);
+      setCurrentView('tracker');
+    } catch (error) {
+      console.error("Logout Failed", error);
+    }
+  };
+
   // 2. جلب البيانات وإدارة الاتصال عند سكون المتصفح
   useEffect(() => {
+    if (authLoading) return;
+    
     if (!user || !db) {
-      const localData = localStorage.getItem('tracker_data');
-      if (localData) {
-        const parsed = JSON.parse(localData);
-        setSubjects(parsed);
-        setActiveSubjectId(parsed.length > 0 ? parsed[0].id : null);
-      } else {
-        const defaultSubjects = [{ id: 1, name: 'المادة الأولى (مثال)', lectures: [] }];
-        setSubjects(defaultSubjects);
-        setActiveSubjectId(1);
-      }
       setIsLoaded(true);
       return;
     }
     
     let unsubscribeSnapshot = () => {};
     let isComponentMounted = true;
+    setIsLoaded(false);
 
-    // دالة للاتصال بقاعدة البيانات
+    // دالة للاتصال بقاعدة البيانات الخاصة بالمستخدم
     const connectToFirebase = () => {
       if (!isComponentMounted) return;
       
@@ -115,7 +154,6 @@ export default function App() {
           const loadedSubjects = docSnap.data().subjects;
           setSubjects(loadedSubjects);
           
-          // تأمين ذكي لمعرف المادة النشطة حتى لا تظهر شاشة فارغة
           setActiveSubjectId(prev => {
             if (prev && loadedSubjects.some(s => s.id === prev)) return prev;
             return loadedSubjects.length > 0 ? loadedSubjects[0].id : null;
@@ -123,12 +161,11 @@ export default function App() {
         } else {
           const defaultSubjects = [{ id: 1, name: 'المادة الأولى (مثال)', lectures: [] }];
           setSubjects(defaultSubjects);
-          setActiveSubjectId(prev => prev || 1);
+          setActiveSubjectId(1);
         }
         setIsLoaded(true);
       }, (error) => {
         console.error("Connection dropped, reconnecting...", error);
-        // إعادة اتصال صامتة في حالة انقطاع النت أو سكون المتصفح
         if (isComponentMounted) {
           setTimeout(() => {
             unsubscribeSnapshot();
@@ -140,10 +177,8 @@ export default function App() {
 
     connectToFirebase();
 
-    // مراقبة عودة المستخدم للصفحة لعمل تنشيط فوري للاتصال
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && isComponentMounted) {
-        // بمجرد العودة للصفحة، نغلق الاتصال القديم ونفتح واحد جديد فريش
         unsubscribeSnapshot();
         connectToFirebase();
       }
@@ -156,12 +191,31 @@ export default function App() {
       unsubscribeSnapshot();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [user]);
+  }, [user, authLoading]);
+
+  // جلب بيانات الإدارة (الأعضاء)
+  useEffect(() => {
+    if (currentView === 'admin' && isAdmin && db) {
+      const fetchUsers = async () => {
+        setLoadingAdmin(true);
+        try {
+          const querySnapshot = await getDocs(collection(db, 'artifacts', appId, 'usersList'));
+          const usersList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          // ترتيب من الأحدث دخولاً للأقدم
+          usersList.sort((a, b) => new Date(b.lastLogin) - new Date(a.lastLogin));
+          setAdminUsersList(usersList);
+        } catch (error) {
+          console.error("Error fetching users list: ", error);
+        }
+        setLoadingAdmin(false);
+      };
+      fetchUsers();
+    }
+  }, [currentView, isAdmin]);
 
   // تحديث البيانات محلياً ورفعها للسحابة
   const saveSubjectsData = async (newSubjects) => {
     setSubjects(newSubjects);
-    localStorage.setItem('tracker_data', JSON.stringify(newSubjects));
 
     if (!user || !db) return;
     setIsSyncing(true);
@@ -213,7 +267,7 @@ export default function App() {
     e.preventDefault();
     if (!newLectureName.trim() || !activeSubjectId) return;
     
-    // فصل المدخلات لتكوين قائمة في حال نسخ عدة أسطر، مع إزالة الـ "-" إن وجدت
+    // الإضافة الجماعية (Bulk Add)
     const lectureNames = newLectureName
       .split(/[\n,]+/) 
       .map(name => name.trim().replace(/^-\s*/, ''))
@@ -298,11 +352,15 @@ export default function App() {
            lecture.createdQuestions && lecture.solvedOwnQuestions && lecture.solvedNewQuestions;
   };
 
-  const activeSubject = subjects.find(s => s.id === activeSubjectId);
-  // eslint-disable-next-line no-unused-vars
-  const fullyCompletedLecturesCount = activeSubject?.lectures.filter(isFullyCompleted).length || 0;
+  const formatDate = (isoString) => {
+    const date = new Date(isoString);
+    return new Intl.DateTimeFormat('ar-EG', { 
+      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+    }).format(date);
+  };
 
-  // إعدادات مهام المحاضرة
+  const activeSubject = subjects.find(s => s.id === activeSubjectId);
+
   const taskDefinitions = [
     { key: 'studied', label: 'ذاكرتها', color: 'text-green-600 dark:text-green-400', bgChecked: 'peer-checked:bg-green-600 peer-checked:border-green-600' },
     { key: 'listenedRecord', label: 'الريكورد', color: 'text-blue-600 dark:text-blue-400', bgChecked: 'peer-checked:bg-blue-600 peer-checked:border-blue-600' },
@@ -312,7 +370,60 @@ export default function App() {
     { key: 'solvedNewQuestions', label: 'أسئلة جديدة', color: 'text-teal-600 dark:text-teal-400', bgChecked: 'peer-checked:bg-teal-600 peer-checked:border-teal-600' }
   ];
 
-  if (!isLoaded) {
+  // ---------------- الشاشات ----------------
+
+  // شاشة التحميل الأولية
+  if (authLoading) {
+    return (
+      <div className={`min-h-screen flex flex-col items-center justify-center ${darkMode ? 'bg-slate-900 text-indigo-400' : 'bg-slate-50 text-indigo-600'}`} dir="rtl">
+        <Loader2 className="animate-spin mb-4" size={48} />
+        <p className="text-xl font-semibold">جاري التحقق من الهوية...</p>
+      </div>
+    );
+  }
+
+  // شاشة تسجيل الدخول
+  if (!user) {
+    return (
+      <div className={`min-h-screen flex flex-col items-center justify-center p-4 transition-colors duration-300 ${darkMode ? 'bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`} dir="rtl">
+        <button onClick={() => setDarkMode(!darkMode)} className={`absolute top-6 left-6 p-3 rounded-full transition-colors ${darkMode ? 'bg-slate-800 text-yellow-300 hover:bg-slate-700' : 'bg-white text-indigo-600 shadow-md hover:bg-slate-100'}`}>
+          {darkMode ? <Sun size={24} /> : <Moon size={24} />}
+        </button>
+
+        <div className={`w-full max-w-md p-8 rounded-3xl shadow-xl text-center border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}`}>
+          <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner ${darkMode ? 'bg-indigo-900/50' : 'bg-indigo-50'}`}>
+            <BookOpen size={48} className={darkMode ? 'text-indigo-400' : 'text-indigo-600'} />
+          </div>
+          <h1 className="text-3xl font-bold mb-2">لمّ المنهج</h1>
+          <p className={`mb-8 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>نظم وقتك، تتبع محاضراتك المتراكمة، وانجح بتفوق!</p>
+          
+          <button 
+            onClick={handleGoogleLogin}
+            className={`w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl font-bold text-lg transition-all transform hover:scale-[1.02] active:scale-95 shadow-md ${
+              darkMode ? 'bg-white text-slate-900 hover:bg-slate-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'
+            }`}
+          >
+            <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg">
+              <g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)">
+                <path fill="#4285F4" d="M -3.264 51.509 C -3.264 50.719 -3.334 49.969 -3.454 49.239 L -14.754 49.239 L -14.754 53.749 L -8.284 53.749 C -8.574 55.229 -9.424 56.479 -10.684 57.329 L -10.684 60.329 L -6.824 60.329 C -4.564 58.239 -3.264 55.159 -3.264 51.509 Z"/>
+                <path fill="#34A853" d="M -14.754 63.239 C -11.514 63.239 -8.804 62.159 -6.824 60.329 L -10.684 57.329 C -11.764 58.049 -13.134 58.489 -14.754 58.489 C -17.884 58.489 -20.534 56.379 -21.484 53.529 L -25.464 53.529 L -25.464 56.619 C -23.494 60.539 -19.444 63.239 -14.754 63.239 Z"/>
+                <path fill="#FBBC05" d="M -21.484 53.529 C -21.734 52.809 -21.864 52.039 -21.864 51.239 C -21.864 50.439 -21.724 49.669 -21.484 48.949 L -21.484 45.859 L -25.464 45.859 C -26.284 47.479 -26.754 49.299 -26.754 51.239 C -26.754 53.179 -26.284 54.999 -25.464 56.619 L -21.484 53.529 Z"/>
+                <path fill="#EA4335" d="M -14.754 43.989 C -12.984 43.989 -11.404 44.599 -10.154 45.789 L -6.734 42.369 C -8.804 40.429 -11.514 39.239 -14.754 39.239 C -19.444 39.239 -23.494 41.939 -25.464 45.859 L -21.484 48.949 C -20.534 46.099 -17.884 43.989 -14.754 43.989 Z"/>
+              </g>
+            </svg>
+            سجل دخولك بواسطة جوجل
+          </button>
+          
+          <p className={`mt-6 text-sm ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+            بياناتك محفوظة بأمان وسرية تامة على السحابة.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // شاشة الانتظار لجلب البيانات بعد تسجيل الدخول
+  if (!isLoaded && currentView === 'tracker') {
     return (
       <div className={`min-h-screen flex flex-col items-center justify-center ${darkMode ? 'bg-slate-900 text-indigo-400' : 'bg-slate-50 text-indigo-600'}`} dir="rtl">
         <Loader2 className="animate-spin mb-4" size={48} />
@@ -324,13 +435,41 @@ export default function App() {
   return (
     <div className={`min-h-screen font-sans pb-12 transition-colors duration-300 ${darkMode ? 'bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`} dir="rtl">
       {/* الهيدر */}
-      <header className={`${darkMode ? 'bg-slate-800 border-b border-slate-700' : 'bg-gradient-to-r from-indigo-700 to-indigo-500 shadow-md'} text-white p-4 sticky top-0 z-50 transition-colors`}>
+      <header className={`${darkMode ? 'bg-slate-800 border-b border-slate-700' : 'bg-gradient-to-r from-indigo-700 to-indigo-500 shadow-md'} text-white p-3 sticky top-0 z-50 transition-colors`}>
         <div className="container mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <BookOpen size={28} className={darkMode ? 'text-indigo-400' : 'text-white'} />
-            <h1 className="text-xl sm:text-2xl font-bold">لمّ المنهج</h1>
+          
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <BookOpen size={28} className={darkMode ? 'text-indigo-400' : 'text-white'} />
+              <h1 className="text-xl sm:text-2xl font-bold cursor-pointer" onClick={() => setCurrentView('tracker')}>لمّ المنهج</h1>
+            </div>
+            
+            {isAdmin && (
+              <button 
+                onClick={() => setCurrentView(currentView === 'admin' ? 'tracker' : 'admin')}
+                className={`hidden md:flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                  currentView === 'admin' 
+                  ? 'bg-amber-500 text-white shadow-sm' 
+                  : (darkMode ? 'bg-slate-700 text-amber-400 hover:bg-slate-600' : 'bg-indigo-800/50 text-amber-200 hover:bg-indigo-800')
+                }`}
+              >
+                <Shield size={16} /> لوحة التحكم
+              </button>
+            )}
           </div>
+
           <div className="flex items-center gap-3">
+            {/* مؤشر الحفظ السحابي */}
+            {currentView === 'tracker' && (
+              <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm ${darkMode ? 'bg-slate-700' : 'bg-indigo-900/30'}`}>
+                {isSyncing ? (
+                  <><Loader2 size={14} className={`animate-spin ${darkMode ? 'text-indigo-400' : 'text-indigo-200'}`} /> <span>جاري الحفظ...</span></>
+                ) : (
+                  <><Cloud size={14} className="text-green-400" /> <span>تم الحفظ</span></>
+                )}
+              </div>
+            )}
+
             <button 
               onClick={() => setDarkMode(!darkMode)} 
               className={`p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 text-yellow-300 hover:bg-slate-600' : 'bg-indigo-800/50 text-indigo-100 hover:bg-indigo-800'}`}
@@ -338,21 +477,106 @@ export default function App() {
             >
               {darkMode ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium backdrop-blur-sm ${darkMode ? 'bg-slate-700' : 'bg-indigo-900/30'}`}>
-              {user ? (
-                isSyncing ? (
-                  <><Loader2 size={16} className={`animate-spin ${darkMode ? 'text-indigo-400' : 'text-indigo-200'}`} /> <span>جاري الحفظ...</span></>
+            
+            <div className="h-6 w-px bg-white/20 mx-1"></div>
+
+            {/* بروفايل المستخدم وتسجيل الخروج */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 bg-black/20 rounded-full pr-1 pl-3 py-1">
+                {user.photoURL ? (
+                  <img src={user.photoURL} alt="profile" className="w-7 h-7 rounded-full object-cover border border-white/20" />
                 ) : (
-                  <><Cloud size={16} className="text-green-400" /> <span>محفوظ في السحابة</span></>
-                )
-              ) : (
-                <><Save size={16} className={darkMode ? 'text-indigo-400' : 'text-indigo-200'} /> <span>محفوظ محلياً</span></>
-              )}
+                  <div className="w-7 h-7 rounded-full bg-indigo-400 flex items-center justify-center border border-white/20"><User size={16}/></div>
+                )}
+                <span className="text-sm font-medium hidden lg:block truncate max-w-[120px]">{user.displayName || 'مستخدم'}</span>
+              </div>
+              <button 
+                onClick={handleLogout}
+                className="p-2 rounded-full bg-red-500/20 text-red-200 hover:bg-red-500 hover:text-white transition-colors"
+                title="تسجيل الخروج"
+              >
+                <LogOut size={18} />
+              </button>
             </div>
           </div>
         </div>
       </header>
 
+      {/* ---------------- لوحة تحكم الإدارة (تظهر للمدير فقط) ---------------- */}
+      {currentView === 'admin' && isAdmin ? (
+        <main className="container mx-auto p-4 mt-6">
+          <div className={`rounded-3xl p-6 md:p-8 border shadow-sm mb-6 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className="flex items-center gap-3 mb-8 border-b pb-4 border-slate-200 dark:border-slate-700">
+              <div className="p-3 bg-amber-100 text-amber-600 rounded-xl">
+                <Shield size={32} />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold">لوحة تحكم المدير</h2>
+                <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>أهلاً بك يا مدير، هذه بيانات المسجلين في تطبيقك.</p>
+              </div>
+            </div>
+
+            {/* إحصائيات سريعة */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+              <div className={`p-6 rounded-2xl border flex flex-col items-center justify-center text-center ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-indigo-50 border-indigo-100'}`}>
+                <Users size={32} className="text-indigo-500 mb-2" />
+                <span className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">{adminUsersList.length}</span>
+                <span className={`text-sm font-medium ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>إجمالي الطلاب المسجلين</span>
+              </div>
+            </div>
+
+            {/* جدول المستخدمين */}
+            <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><Users size={20}/> قائمة الطلاب</h3>
+            
+            {loadingAdmin ? (
+              <div className="flex justify-center py-12"><Loader2 className="animate-spin text-indigo-500" size={40} /></div>
+            ) : (
+              <div className={`rounded-xl border overflow-hidden ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse">
+                    <thead>
+                      <tr className={`text-sm ${darkMode ? 'bg-slate-700/50 text-slate-300' : 'bg-slate-50 text-slate-600'}`}>
+                        <th className="p-4 font-semibold border-b dark:border-slate-700">#</th>
+                        <th className="p-4 font-semibold border-b dark:border-slate-700">الطالب</th>
+                        <th className="p-4 font-semibold border-b dark:border-slate-700">الإيميل</th>
+                        <th className="p-4 font-semibold border-b dark:border-slate-700">آخر ظهور</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adminUsersList.map((adminUser, index) => (
+                        <tr key={adminUser.id} className={`border-b transition duration-300 ${darkMode ? 'border-slate-700 hover:bg-slate-700/50' : 'border-slate-100 hover:bg-slate-50'}`}>
+                          <td className="p-4 font-medium text-slate-500">{index + 1}</td>
+                          <td className="p-4">
+                            <div className="flex items-center gap-3">
+                              {adminUser.photoURL ? (
+                                <img src={adminUser.photoURL} alt="Avatar" className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-600" />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center"><User size={16}/></div>
+                              )}
+                              <span className="font-bold">{adminUser.name}</span>
+                            </div>
+                          </td>
+                          <td className="p-4 text-slate-500 dark:text-slate-400 font-mono text-sm" dir="ltr">{adminUser.email}</td>
+                          <td className="p-4 text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-2">
+                            <Calendar size={14}/> {formatDate(adminUser.lastLogin)}
+                          </td>
+                        </tr>
+                      ))}
+                      {adminUsersList.length === 0 && (
+                        <tr>
+                          <td colSpan="4" className="text-center p-8 text-slate-500">لم يسجل أحد بعد.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
+      ) : (
+
+      /* ---------------- واجهة التطبيق الرئيسية (المتعقب) ---------------- */
       <main className="container mx-auto p-4 flex flex-col lg:flex-row gap-6 mt-6">
         
         {/* الشريط الجانبي للمواد */}
@@ -645,13 +869,14 @@ export default function App() {
                 <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 ${darkMode ? 'bg-indigo-900/30' : 'bg-indigo-50'}`}>
                   <LayoutList size={40} className={darkMode ? 'text-indigo-400' : 'text-indigo-400'} />
                 </div>
-                <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>أهلاً بك يا بطل! 👋</h2>
-                <p className={`max-w-md mx-auto ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>قم باختيار مادة من القائمة الجانبية أو أضف مادة دراسية جديدة للبدء في تنظيم وقتك ولم المنهج بنجاح.</p>
+                <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>أهلاً بك في لمّ المنهج! 👋</h2>
+                <p className={`max-w-md mx-auto ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>قم باختيار مادة من القائمة الجانبية أو أضف مادة دراسية جديدة للبدء في تنظيم وقتك بنجاح.</p>
               </div>
             </div>
           )}
         </section>
       </main>
+      )}
     </div>
   );
 }
