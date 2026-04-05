@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Plus, Trash2, BookOpen, Check, Cloud, CloudOff, 
-  Loader2, Pencil, X, Save, CheckCircle2, Clock, LayoutList, Moon, Sun,
+  Plus, Trash, BookOpen, Check, Cloud, 
+  Loader2, Pencil, X, Save, CheckCircle, Clock, List, Moon, Sun,
   LogOut, Shield, Users, User, Calendar, Timer, Play, Pause, RotateCcw, 
-  Settings, BarChart2, Coffee, Brain, ArrowLeft, Trophy, Download,
-  CloudUpload, Link as LinkIcon, Server, CheckCircle, RefreshCw, UserCheck, UserX
+  Settings, BarChart, Coffee, Brain, ArrowLeft, Trophy, Download,
+  CloudUpload, Link as LinkIcon, Server, RefreshCw, UserCheck, UserX
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -603,7 +603,7 @@ export default function App() {
             </div>
             
             <div className="flex gap-2 bg-black/10 rounded-xl p-1 backdrop-blur-sm">
-              <button onClick={() => setCurrentView('tracker')} className={`p-2 rounded-lg transition ${currentView === 'tracker' ? 'bg-white text-indigo-600 shadow-sm' : 'text-indigo-100 hover:bg-white/20'}`} title="الجدول"><LayoutList size={18} /></button>
+              <button onClick={() => setCurrentView('tracker')} className={`p-2 rounded-lg transition ${currentView === 'tracker' ? 'bg-white text-indigo-600 shadow-sm' : 'text-indigo-100 hover:bg-white/20'}`} title="الجدول"><List size={18} /></button>
               <button onClick={() => setCurrentView('pomodoro')} className={`p-2 rounded-lg transition ${currentView === 'pomodoro' ? 'bg-white text-indigo-600 shadow-sm' : 'text-indigo-100 hover:bg-white/20'}`} title="بومودورو والإحصائيات"><Timer size={18} /></button>
               <button onClick={() => setCurrentView('leaderboard')} className={`p-2 rounded-lg transition ${currentView === 'leaderboard' ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-indigo-100 hover:bg-white/20'}`} title="لوحة الشرف"><Trophy size={18} /></button>
               <button onClick={() => setCurrentView('automation')} className={`p-2 rounded-lg transition ${currentView === 'automation' ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-indigo-100 hover:bg-white/20'}`} title="المعالج السحابي"><Server size={18} /></button>
@@ -765,7 +765,7 @@ export default function App() {
                 </div>
               )}
               <div className={`rounded-3xl p-6 border shadow-sm flex-1 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                <h3 className={`text-xl font-bold flex items-center gap-2 pb-3 border-b mb-6 ${darkMode ? 'border-slate-700' : 'border-slate-100'}`}><BarChart2 className="text-indigo-500" size={24}/> حصاد المذاكرة</h3>
+                <h3 className={`text-xl font-bold flex items-center gap-2 pb-3 border-b mb-6 ${darkMode ? 'border-slate-700' : 'border-slate-100'}`}><BarChart className="text-indigo-500" size={24}/> حصاد المذاكرة</h3>
                 <div className="grid grid-cols-1 gap-4 mb-6">
                   <div className={`p-5 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-indigo-900/20 border-indigo-500/30' : 'bg-indigo-50 border-indigo-100'}`}>
                     <div><span className={`block text-sm font-bold mb-1 ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>اليوم</span><span className={`text-2xl font-black ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}>{calculateStudyTime('day').hours} <span className="text-sm font-medium">س</span> و {calculateStudyTime('day').minutes} <span className="text-sm font-medium">د</span></span></div>
@@ -777,7 +777,7 @@ export default function App() {
                   </div>
                   <div className={`p-5 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-purple-900/20 border-purple-500/30' : 'bg-purple-50 border-purple-100'}`}>
                     <div><span className={`block text-sm font-bold mb-1 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>هذا الشهر</span><span className={`text-2xl font-black ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}>{calculateStudyTime('month').hours} <span className="text-sm font-medium">س</span> و {calculateStudyTime('month').minutes} <span className="text-sm font-medium">د</span></span></div>
-                    <BarChart2 className="text-purple-500" size={32} />
+                    <BarChart className="text-purple-500" size={32} />
                   </div>
                 </div>
               </div>
@@ -798,21 +798,21 @@ export default function App() {
                 {usersList[1] && (
                   <div className="flex flex-col items-center order-2 md:order-1 transform md:translate-y-8">
                     <div className="relative"><img src={usersList[1].photoURL || 'https://via.placeholder.com/150'} alt="2nd" className="w-20 h-20 rounded-full border-4 border-slate-300 object-cover shadow-lg" /><div className="absolute -bottom-3 -right-3 bg-slate-200 w-8 h-8 rounded-full flex items-center justify-center font-bold border-2 border-white shadow-sm">2</div></div>
-                    <span className={`font-bold mt-4 ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{usersList[1].name.split(' ')[0]}</span>
+                    <span className={`font-bold mt-4 ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{(usersList[1].name || 'مستخدم').split(' ')[0]}</span>
                     <span className="text-xs text-slate-500 font-bold bg-slate-100 px-2 py-1 rounded-full mt-1">🥈 {Math.floor((usersList[1].totalStudyTime || 0) / 3600)} ساعة</span>
                   </div>
                 )}
                 {usersList[0] && (
                   <div className="flex flex-col items-center order-1 md:order-2 z-10">
                     <div className="relative"><Trophy size={32} className="absolute -top-10 left-1/2 transform -translate-x-1/2 text-yellow-400 animate-bounce" /><img src={usersList[0].photoURL || 'https://via.placeholder.com/150'} alt="1st" className="w-28 h-28 rounded-full border-4 border-yellow-400 object-cover shadow-xl shadow-yellow-500/20" /><div className="absolute -bottom-4 -right-2 bg-yellow-400 text-yellow-900 w-10 h-10 rounded-full flex items-center justify-center font-black border-2 border-white shadow-md text-lg">1</div></div>
-                    <span className={`font-black text-xl mt-5 ${darkMode ? 'text-yellow-400' : 'text-amber-600'}`}>{usersList[0].name.split(' ')[0]}</span>
+                    <span className={`font-black text-xl mt-5 ${darkMode ? 'text-yellow-400' : 'text-amber-600'}`}>{(usersList[0].name || 'مستخدم').split(' ')[0]}</span>
                     <span className="text-sm font-bold bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full mt-1">🥇 {Math.floor((usersList[0].totalStudyTime || 0) / 3600)} ساعة</span>
                   </div>
                 )}
                 {usersList[2] && (
                   <div className="flex flex-col items-center order-3 transform md:translate-y-12">
                     <div className="relative"><img src={usersList[2].photoURL || 'https://via.placeholder.com/150'} alt="3rd" className="w-16 h-16 rounded-full border-4 border-amber-700/50 object-cover shadow-md" /><div className="absolute -bottom-2 -right-2 bg-amber-700/50 text-white w-6 h-6 rounded-full flex items-center justify-center font-bold border-2 border-white text-xs">3</div></div>
-                    <span className={`font-bold mt-3 text-sm ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{usersList[2].name.split(' ')[0]}</span>
+                    <span className={`font-bold mt-3 text-sm ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{(usersList[2].name || 'مستخدم').split(' ')[0]}</span>
                     <span className="text-[10px] text-amber-900 font-bold bg-amber-100 px-2 py-0.5 rounded-full mt-1">🥉 {Math.floor((usersList[2].totalStudyTime || 0) / 3600)} س</span>
                   </div>
                 )}
@@ -897,7 +897,7 @@ export default function App() {
                           <td className="p-4">
                             <div className="flex justify-center gap-2">
                               <button onClick={() => toggleAdminRole(u.id, u.role, u.email)} className={`p-2 rounded-lg ${isThisAdmin ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-600'}`} title="تغيير الصلاحيات">{isThisAdmin ? <UserX size={18} /> : <UserCheck size={18} />}</button>
-                              <button onClick={() => adminDeleteUser(u.id, u.name, u.email)} className="p-2 rounded-lg bg-red-100 text-red-600" title="حذف نهائي"><Trash2 size={18} /></button>
+                              <button onClick={() => adminDeleteUser(u.id, u.name, u.email)} className="p-2 rounded-lg bg-red-100 text-red-600" title="حذف نهائي"><Trash size={18} /></button>
                             </div>
                           </td>
                         </tr>
@@ -918,7 +918,7 @@ export default function App() {
         {/* الشريط الجانبي (قائمة المواد) */}
         <aside className={`w-full lg:w-1/4 rounded-2xl p-4 border h-fit sticky top-24 ${darkMode ? 'bg-slate-800 border-slate-700 shadow-none' : 'bg-white border-slate-200 shadow-sm'}`}>
           <h2 className={`text-lg font-bold mb-4 flex items-center gap-2 border-b pb-3 ${darkMode ? 'text-slate-200 border-slate-700' : 'text-slate-700 border-slate-200'}`}>
-            <LayoutList size={20} className={darkMode ? 'text-indigo-400' : 'text-indigo-500'}/> المواد الدراسية
+            <List size={20} className={darkMode ? 'text-indigo-400' : 'text-indigo-500'}/> المواد الدراسية
           </h2>
           
           <form onSubmit={addSubject} className="mb-4 flex gap-2">
@@ -946,7 +946,7 @@ export default function App() {
                     </button>
                     <div className="flex items-center gap-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => startEditSubject(subject)} className={`p-1.5 rounded-md ${darkMode ? 'text-slate-400 hover:text-indigo-400 hover:bg-slate-600' : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-100'}`}><Pencil size={14} /></button>
-                      <button onClick={() => deleteSubject(subject.id)} className={`p-1.5 rounded-md ${darkMode ? 'text-slate-400 hover:text-red-400 hover:bg-slate-600' : 'text-slate-400 hover:text-red-600 hover:bg-red-100'}`}><Trash2 size={14} /></button>
+                      <button onClick={() => deleteSubject(subject.id)} className={`p-1.5 rounded-md ${darkMode ? 'text-slate-400 hover:text-red-400 hover:bg-slate-600' : 'text-slate-400 hover:text-red-600 hover:bg-red-100'}`}><Trash size={14} /></button>
                     </div>
                   </div>
                 )}
@@ -970,7 +970,7 @@ export default function App() {
                       <div className="bg-gradient-to-l from-indigo-500 to-purple-500 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${getProgress(activeSubject)}%` }}></div>
                     </div>
                     <div className={`flex gap-4 text-xs font-medium ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      <span className="flex items-center gap-1"><CheckCircle2 size={14} className="text-green-500"/> إنجاز المادة: {getProgress(activeSubject)}%</span>
+                      <span className="flex items-center gap-1"><CheckCircle size={14} className="text-green-500"/> إنجاز المادة: {getProgress(activeSubject)}%</span>
                       <span className="flex items-center gap-1"><BookOpen size={14} className={darkMode ? 'text-indigo-400' : 'text-indigo-500'}/> المحاضرات: {activeSubject.lectures.length}</span>
                     </div>
                   </div>
@@ -1005,7 +1005,7 @@ export default function App() {
                                 <h3 className={`font-bold text-lg pr-1 flex items-center gap-2 ${isDone ? (darkMode ? 'text-slate-500 line-through decoration-green-500' : 'text-slate-500 line-through decoration-green-400') : (darkMode ? 'text-slate-200' : 'text-slate-800')}`}>{lecture.name}</h3>
                                 <div className={`flex gap-1 rounded-lg p-1 border shrink-0 ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
                                   <button onClick={() => startEditLecture(lecture)} className={`p-1.5 ${darkMode ? 'text-slate-400 hover:text-indigo-400' : 'text-slate-400 hover:text-indigo-600'}`}><Pencil size={14} /></button>
-                                  <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className={`p-1.5 ${darkMode ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-600'}`}><Trash2 size={14} /></button>
+                                  <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className={`p-1.5 ${darkMode ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-600'}`}><Trash size={14} /></button>
                                 </div>
                               </>
                             )}
@@ -1037,7 +1037,7 @@ export default function App() {
                   </div>
 
                   {/* عرض الشاشات الكبيرة (جدول) */}
-                  <div className={`hidden lg:block rounded-2xl border overflow-hidden ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className={`hidden lg:block rounded-2xl border overflow-hidden ${darkMode ? 'bg-slate-800 border-slate-700 shadow-none' : 'bg-white border-slate-200 shadow-sm'}`}>
                     <div className="overflow-x-auto">
                       <table className="w-full text-right border-collapse min-w-[850px]">
                         <thead>
@@ -1062,7 +1062,7 @@ export default function App() {
                                     </div>
                                   ) : (
                                     <div className="flex items-center gap-2 group/name">
-                                      {isDone && <CheckCircle2 size={16} className="text-green-500 shrink-0" />}
+                                      {isDone && <CheckCircle size={16} className="text-green-500 shrink-0" />}
                                       <span className={`truncate max-w-[180px] ${isDone ? (darkMode ? 'text-slate-500 line-through decoration-green-500' : 'text-slate-500 line-through decoration-green-400') : (darkMode ? 'text-slate-200' : 'text-slate-800')}`}>{lecture.name}</span>
                                     </div>
                                   )}
@@ -1087,7 +1087,7 @@ export default function App() {
                                 <td className="p-3">
                                   <div className="flex items-center justify-center gap-2">
                                     <button onClick={() => startEditLecture(lecture)} className={`p-1.5 rounded-lg ${darkMode ? 'text-slate-400 hover:text-indigo-400' : 'text-slate-400 hover:text-indigo-600'}`} title="تعديل المحاضرة"><Pencil size={16} /></button>
-                                    <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className={`p-1.5 rounded-lg ${darkMode ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-600'}`} title="حذف المحاضرة"><Trash2 size={16} /></button>
+                                    <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className={`p-1.5 rounded-lg ${darkMode ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-600'}`} title="حذف المحاضرة"><Trash size={16} /></button>
                                   </div>
                                 </td>
                               </tr>
@@ -1110,7 +1110,7 @@ export default function App() {
           ) : (
             <div className={`h-full flex items-center justify-center rounded-2xl p-12 border min-h-[50vh] ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
               <div className="text-center">
-                <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 ${darkMode ? 'bg-indigo-900/30' : 'bg-indigo-50'}`}><LayoutList size={40} className={darkMode ? 'text-indigo-400' : 'text-indigo-400'} /></div>
+                <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 ${darkMode ? 'bg-indigo-900/30' : 'bg-indigo-50'}`}><List size={40} className={darkMode ? 'text-indigo-400' : 'text-indigo-400'} /></div>
                 <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>أهلاً بك في لمّ المنهج! 👋</h2>
                 <p className={`max-w-md mx-auto ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>قم باختيار مادة من القائمة الجانبية أو أضف مادة دراسية جديدة للبدء في تنظيم وقتك بنجاح.</p>
               </div>
