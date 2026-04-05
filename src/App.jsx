@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Plus, Trash2, BookOpen, Check, Cloud, 
+  Plus, Trash, BookOpen, Check, Cloud, 
   Loader2, Pencil, X, Save, CheckCircle, Clock, List, Moon, Sun,
   LogOut, Shield, Users, User, Calendar, Timer, Play, Pause, RotateCcw, 
   Settings, BarChart, Coffee, Brain, Trophy, Download,
@@ -199,7 +199,6 @@ export default function App() {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      // نضيف صلاحيات درايف للحصول على التوكن
       provider.addScope('https://www.googleapis.com/auth/drive.file');
       provider.addScope('https://www.googleapis.com/auth/drive.readonly');
       
@@ -344,7 +343,6 @@ export default function App() {
     }
   }, [currentView, isAdmin]);
 
-  // استدعاء ملفات جوجل درايف
   const fetchDriveList = async () => {
     if (!driveToken) return connectDrive();
     setIsLoadingDrive(true);
@@ -369,6 +367,7 @@ export default function App() {
       });
       const blob = await res.blob();
       const f = new File([blob], file.name, { type: blob.type || 'audio/mpeg' });
+      f.isDrive = true;
       setLocalFile(f);
       alert(`تم استيراد ${file.name} بنجاح! جاهز للتقطيع.`);
     } catch (e) {
@@ -378,7 +377,6 @@ export default function App() {
     setIsLoadingDrive(false);
   };
 
-  // رفع الملفات لـ جوجل درايف من خلال المتصفح (لتجنب 403)
   const uploadToDriveFrontend = async (blob, filename, token) => {
     const metadata = { name: filename, mimeType: 'audio/mpeg' };
     const form = new FormData();
@@ -496,11 +494,10 @@ export default function App() {
 
     try {
       const formData = new FormData();
-      // نحن نرسل الملف دائماً على أنه local للسيرفر لتبسيط المعالجة
       formData.append('inputType', inputType === 'drive' ? 'local' : inputType);
       formData.append('split_mode', splitMethod);
       formData.append('split_value', splitMethod === 'time' ? splitValueTime : splitValueParts);
-      formData.append('auto_upload', 'false'); // نوقف الرفع من السيرفر لتخطي خطأ 403
+      formData.append('auto_upload', 'false'); 
       
       if ((inputType === 'local' || inputType === 'drive') && localFile) {
         formData.append('file', localFile);
@@ -520,7 +517,6 @@ export default function App() {
 
       const data = await response.json();
 
-      // الرفع إلى جوجل درايف عبر المتصفح لتخطي خطأ السيرفر
       if (autoUploadDrive && driveToken && data.parts) {
         const newParts = [];
         for (let i = 0; i < data.parts.length; i++) {
@@ -577,7 +573,15 @@ export default function App() {
   const addLecture = (e) => {
     e.preventDefault();
     if (!newLectureName.trim() || !activeSubjectId) return;
-    const lectureNames = newLectureName.split(/[\n,]+/).map(name => name.trim().replace(/^-\s*/, '')).filter(name => name.length > 0);
+    
+    // استبدال أي تعبيرات منتظمة بعمليات النصوص العادية لضمان الأمان أثناء البناء
+    const namesArray = newLectureName.split('\n').flatMap(n => n.split(','));
+    const lectureNames = namesArray.map(name => {
+      let n = name.trim();
+      if (n.startsWith('-')) n = n.substring(1).trim();
+      return n;
+    }).filter(name => name.length > 0);
+
     const newLectures = lectureNames.map((name, index) => ({
       id: Date.now() + index, name: name,
       studied: false, listenedRecord: false, transcribed: false,
@@ -1205,9 +1209,7 @@ export default function App() {
                         <span className={`font-medium ${activeSubjectId === subject.id ? (darkMode ? 'text-indigo-300 font-bold' : 'text-indigo-800 font-bold') : (darkMode ? 'text-slate-300' : 'text-slate-700')}`}>
                           {subject.name}
                         </span>
-                        <span className={`text-[10px] font-bold px-2 py-1 rounded-lg shadow-sm border backdrop-blur-sm ${darkMode ? 'text-indigo-300 bg-slate-800/80 border-slate-600' : 'text-indigo-700 bg-white/80 border-indigo-100'}`}>
-                          {getProgress(subject)}%
-                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-1 rounded-lg shadow-sm border backdrop-blur-sm ${darkMode ? 'text-indigo-300 bg-slate-800/80 border-slate-600' : 'text-indigo-700 bg-white/80 border-indigo-100'}`}>{getProgress(subject)}%</span>
                       </div>
                     </button>
                     
@@ -1372,7 +1374,7 @@ export default function App() {
                                       <button onClick={() => setEditingLectureId(null)} className="text-slate-400"><X size={16} /></button>
                                     </div>
                                   ) : (
-                                    <div className="flex items-center gap-2 group/name">
+                                    <div className="flex items-center gap-2 group">
                                       {isDone && <CheckCircle size={16} className="text-green-500 shrink-0" />}
                                       <span className={`truncate max-w-[180px] ${isDone ? (darkMode ? 'text-slate-500 line-through decoration-green-500' : 'text-slate-500 line-through decoration-green-400') : (darkMode ? 'text-slate-200' : 'text-slate-800')}`}>
                                         {lecture.name}
