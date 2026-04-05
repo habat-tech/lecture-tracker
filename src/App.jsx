@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Trash2, BookOpen, Check, Cloud, CloudOff, 
   Loader2, Pencil, X, Save, CheckCircle2, Clock, LayoutList, Moon, Sun,
-  LogOut, Shield, Users, User, Calendar, Headphones, Scissors, Timer, ListOrdered, ArrowLeft,
-  Link as LinkIcon, Video, CloudUpload, PlayCircle
+  LogOut, Shield, Users, User, Calendar, Timer, Play, Pause, RotateCcw, 
+  Settings, BarChart2, Coffee, Brain, ArrowLeft
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -42,11 +42,12 @@ export default function App() {
   // حالة تسجيل الدخول والمدير
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [currentView, setCurrentView] = useState('tracker'); // 'tracker', 'admin', or 'audio'
+  const [currentView, setCurrentView] = useState('tracker'); // 'tracker', 'admin', or 'pomodoro'
   const isAdmin = user && user.email === ADMIN_EMAIL;
 
-  // الحالة الأساسية للمواد والمحاضرات
+  // الحالة الأساسية للمواد والمحاضرات والإحصائيات
   const [subjects, setSubjects] = useState([]);
+  const [stats, setStats] = useState([]); // [{ id, date, durationSeconds, subjectId }]
   const [activeSubjectId, setActiveSubjectId] = useState(null);
   const [newSubjectName, setNewSubjectName] = useState('');
   const [newLectureName, setNewLectureName] = useState('');
@@ -65,88 +66,94 @@ export default function App() {
   const [adminUsersList, setAdminUsersList] = useState([]);
   const [loadingAdmin, setLoadingAdmin] = useState(false);
 
-  // مرجع لتايمر الحفظ (لمنع الضغط وتجميع التعديلات)
+  // مرجع لتايمر الحفظ
   const syncTimeoutRef = useRef(null);
 
-  // ---------- حالات مقسم الصوتيات (Audio Splitter) ----------
-  const [uploadMethod, setUploadMethod] = useState('local'); // 'local' or 'link'
-  const [audioLink, setAudioLink] = useState('');
-  const [audioFile, setAudioFile] = useState(null);
-  const [audioDuration, setAudioDuration] = useState(0);
-  const [splitMode, setSplitMode] = useState('parts'); // 'parts' or 'time'
-  const [splitParts, setSplitParts] = useState(4);
-  const [splitTimeMin, setSplitTimeMin] = useState(30); // بالدقائق
-  const [audioSegments, setAudioSegments] = useState([]);
-  const [audioBaseName, setAudioBaseName] = useState('ريكورد المحاضرة');
+  // ---------- حالات مؤقت بومودورو (Pomodoro Timer) ----------
+  const [timerMode, setTimerMode] = useState('work'); // 'work', 'shortBreak', 'longBreak'
+  const [isActive, setIsActive] = useState(false);
+  const [pomodoroSettings, setPomodoroSettings] = useState({
+    work: 25,
+    shortBreak: 5,
+    longBreak: 15
+  });
+  const [timeLeft, setTimeLeft] = useState(pomodoroSettings.work * 60);
+  const [selectedSubjectForTimer, setSelectedSubjectForTimer] = useState('');
+  const [completedPomodoros, setCompletedPomodoros] = useState(0);
+  const [showTimerSettings, setShowTimerSettings] = useState(false);
 
-  // دالة قراءة مدة الملف الصوتي
-  const handleAudioUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      const audio = new Audio(url);
-      audio.onloadedmetadata = () => {
-        setAudioDuration(audio.duration);
-        setAudioFile(file);
-        setAudioSegments([]);
-        // تعيين اسم افتراضي بناءً على اسم الملف
-        setAudioBaseName(file.name.replace(/\.[^/.]+$/, "")); 
-      };
+  // تحديث الوقت عند تغيير الإعدادات أو الوضع
+  useEffect(() => {
+    if (!isActive) {
+      setTimeLeft(pomodoroSettings[timerMode] * 60);
     }
-  };
+  }, [timerMode, pomodoroSettings]);
 
-  // معالجة الروابط (YouTube, Drive, Telegram)
-  const handleLinkSubmit = (e) => {
-    e.preventDefault();
-    if (!audioLink.trim()) return;
-    alert("عذراً، جلب الملفات الصوتية مباشرة من روابط (يوتيوب، تليجرام، أو درايف) يتطلب خادم خلفي (Backend Server) لمعالجة التنزيل لأسباب أمنية. يرجى تنزيل الملف يدوياً ثم رفعه من جهازك كملف محلي.");
-  };
+  // تشغيل المؤقت
+  useEffect(() => {
+    let interval = null;
+    if (isActive && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft(time => time - 1);
+      }, 1000);
+    } else if (isActive && timeLeft === 0) {
+      handleTimerComplete();
+    }
+    return () => clearInterval(interval);
+  }, [isActive, timeLeft]);
 
-  // رفع الملفات لدرايف
-  const handleDriveUpload = () => {
-    alert("لرفع الملفات المقسمة فعلياً إلى Google Drive، يجب ربط حسابك بـ Google API واستخدام مكتبات معالجة الصوت لقص الملف في الخلفية. هذه الواجهة جاهزة للربط مع الـ Backend الخاص بك.");
-  };
+  const handleTimerComplete = () => {
+    setIsActive(false);
+    // تشغيل صوت تنبيه
+    try {
+      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+      audio.play();
+    } catch(e){}
 
-  // تنسيق الوقت (ثواني إلى HH:MM:SS)
-  const formatTime = (totalSeconds) => {
-    const h = Math.floor(totalSeconds / 3600);
-    const m = Math.floor((totalSeconds % 3600) / 60);
-    const s = Math.floor(totalSeconds % 60);
-    return `${h > 0 ? h.toString().padStart(2, '0') + ':' : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
+    if (timerMode === 'work') {
+      // حفظ وقت المذاكرة في الإحصائيات
+      const newStat = {
+        id: Date.now(),
+        date: new Date().toISOString(),
+        durationSeconds: pomodoroSettings.work * 60,
+        subjectId: selectedSubjectForTimer || 'general'
+      };
+      const updatedStats = [...stats, newStat];
+      saveDataAndSync(subjects, updatedStats);
 
-  // توليد الأجزاء
-  const generateSegments = () => {
-    if (!audioDuration) return;
-    let segments = [];
-    if (splitMode === 'parts') {
-      const partDuration = audioDuration / splitParts;
-      for (let i = 0; i < splitParts; i++) {
-        segments.push({
-          id: i,
-          name: `${audioBaseName} - جزء ${i + 1}`,
-          start: formatTime(i * partDuration),
-          end: formatTime((i + 1) * partDuration)
-        });
+      const newCompleted = completedPomodoros + 1;
+      setCompletedPomodoros(newCompleted);
+      
+      // التبديل للبريك
+      if (newCompleted % 4 === 0) {
+        setTimerMode('longBreak');
+      } else {
+        setTimerMode('shortBreak');
       }
     } else {
-      const partDuration = splitTimeMin * 60; // تحويل الدقائق لثواني
-      let currentStart = 0;
-      let i = 0;
-      while (currentStart < audioDuration) {
-        let currentEnd = Math.min(currentStart + partDuration, audioDuration);
-        segments.push({
-          id: i,
-          name: `${audioBaseName} - جزء ${i + 1}`,
-          start: formatTime(currentStart),
-          end: formatTime(currentEnd)
-        });
-        currentStart = currentEnd;
-        i++;
-      }
+      // العودة للمذاكرة بعد البريك
+      setTimerMode('work');
     }
-    setAudioSegments(segments);
   };
+
+  const toggleTimer = () => {
+    if (timerMode === 'work' && !selectedSubjectForTimer && !isActive && subjects.length > 0) {
+      alert("يفضل اختيار المادة التي ستذاكرها ليتم تسجيلها في إحصائياتك!");
+    }
+    setIsActive(!isActive);
+  };
+
+  const resetTimer = () => {
+    setIsActive(false);
+    setTimeLeft(pomodoroSettings[timerMode] * 60);
+  };
+
+  const formatTimerDisplay = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
   // --------------------------------------------------------
 
   // حالة الوضع الليلي (Dark Mode)
@@ -174,7 +181,6 @@ export default function App() {
       return;
     }
 
-    // صمام أمان لتسجيل الدخول: فتح الموقع إجبارياً بعد 5 ثوانٍ إن طال التحقق
     const authTimeout = setTimeout(() => {
       setAuthLoading(false);
     }, 5000);
@@ -185,7 +191,6 @@ export default function App() {
       setAuthLoading(false);
 
       if (currentUser && db) {
-        // حفظ بيانات المستخدم في السحابة لكي يراها المدير في لوحة التحكم
         try {
           await setDoc(doc(db, 'artifacts', appId, 'usersList', currentUser.uid), {
             name: currentUser.displayName || 'بدون اسم',
@@ -208,13 +213,11 @@ export default function App() {
   const handleGoogleLogin = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      // Force account selection to avoid issues with multiple accounts
       provider.setCustomParameters({ prompt: 'select_account' });
       await signInWithPopup(auth, provider);
     } catch (error) {
       console.error("Login Failed", error);
-      // إظهار رسالة الخطأ الأصلية لتسهيل الحل
-      alert(`حدث خطأ أثناء تسجيل الدخول:\n${error.message}\n\nتأكد من:\n1. إضافة رابط موقعك في (Authorized domains) في إعدادات فايربيس.\n2. إغلاق مانع الإعلانات (Shields) في متصفح Brave أو السماح بالـ Popups.`);
+      alert(`حدث خطأ أثناء تسجيل الدخول:\n${error.message}`);
     }
   };
 
@@ -222,8 +225,10 @@ export default function App() {
     try {
       await signOut(auth);
       setSubjects([]);
+      setStats([]);
       setActiveSubjectId(null);
       setCurrentView('tracker');
+      setIsActive(false);
     } catch (error) {
       console.error("Logout Failed", error);
     }
@@ -237,8 +242,9 @@ export default function App() {
       const localData = localStorage.getItem('tracker_data');
       if (localData) {
         const parsed = JSON.parse(localData);
-        setSubjects(parsed);
-        setActiveSubjectId(parsed.length > 0 ? parsed[0].id : null);
+        setSubjects(parsed.subjects || []);
+        setStats(parsed.stats || []);
+        setActiveSubjectId((parsed.subjects && parsed.subjects.length > 0) ? parsed.subjects[0].id : null);
       } else {
         const defaultSubjects = [{ id: 1, name: 'المادة الأولى (مثال)', lectures: [] }];
         setSubjects(defaultSubjects);
@@ -252,53 +258,54 @@ export default function App() {
     let unsubscribeSnapshot = () => {};
     let dataTimeout;
     
-    // 🔥 التحميل الفوري من الكاش (Smart Caching) للقضاء على التأخير
     const cachedData = localStorage.getItem(`tracker_data_${user.uid}`);
     if (cachedData) {
       try {
         const parsed = JSON.parse(cachedData);
-        setSubjects(parsed);
-        setActiveSubjectId(prev => prev || (parsed.length > 0 ? parsed[0].id : null));
-        setIsLoaded(true); // إنهاء شاشة التحميل فوراً لو الداتا موجودة في الكاش
+        setSubjects(parsed.subjects || []);
+        setStats(parsed.stats || []);
+        setActiveSubjectId(prev => prev || ((parsed.subjects && parsed.subjects.length > 0) ? parsed.subjects[0].id : null));
+        setIsLoaded(true);
       } catch(e) {
         console.error("Cache parsing error", e);
         setIsLoaded(false);
       }
     } else {
       setIsLoaded(false); 
-      // 🔥 صمام أمان (Timeout) للبيانات: لو السحابة اتأخرت أكتر من 3.5 ثواني نفتح الموقع إجبارياً
       dataTimeout = setTimeout(() => {
         if (isComponentMounted) {
-          console.warn("Firebase timeout, forcing load.");
           const defaultSubjects = [{ id: 1, name: 'المادة الأولى (مثال)', lectures: [] }];
           setSubjects(defaultSubjects);
+          setStats([]);
           setActiveSubjectId(1);
           setIsLoaded(true);
         }
       }, 3500);
     }
 
-    // دالة للاتصال بقاعدة البيانات الخاصة بالمستخدم
     const connectToFirebase = () => {
       if (!isComponentMounted) return;
       
       const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'trackerData', 'main');
       
       unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
-        if (dataTimeout) clearTimeout(dataTimeout); // إلغاء صمام الأمان لو الداتا وصلت بنجاح
+        if (dataTimeout) clearTimeout(dataTimeout);
 
-        if (docSnap.exists() && docSnap.data().subjects) {
-          const loadedSubjects = docSnap.data().subjects;
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const loadedSubjects = data.subjects || [];
+          const loadedStats = data.stats || [];
           
-          // تحديث الكاش بالبيانات الجديدة القادمة من السحابة
-          localStorage.setItem(`tracker_data_${user.uid}`, JSON.stringify(loadedSubjects));
+          localStorage.setItem(`tracker_data_${user.uid}`, JSON.stringify({ subjects: loadedSubjects, stats: loadedStats }));
 
-          // نمنع تحديث الشاشة الوهمي لو الداتا اللي جاية من السيرفر هي هي اللي قدامك (بيمنع التقطيع)
           setSubjects(prevSubjects => {
-            if (JSON.stringify(prevSubjects) === JSON.stringify(loadedSubjects)) {
-              return prevSubjects;
-            }
+            if (JSON.stringify(prevSubjects) === JSON.stringify(loadedSubjects)) return prevSubjects;
             return loadedSubjects;
+          });
+
+          setStats(prevStats => {
+             if (JSON.stringify(prevStats) === JSON.stringify(loadedStats)) return prevStats;
+             return loadedStats;
           });
           
           setActiveSubjectId(prev => {
@@ -306,16 +313,16 @@ export default function App() {
             return loadedSubjects.length > 0 ? loadedSubjects[0].id : null;
           });
         } else if (!cachedData) {
-          // في حالة مستخدم جديد ليس لديه كاش أو سحابة
           const defaultSubjects = [{ id: 1, name: 'المادة الأولى (مثال)', lectures: [] }];
           setSubjects(defaultSubjects);
+          setStats([]);
           setActiveSubjectId(1);
         }
-        setIsLoaded(true); // إخفاء شاشة التحميل
+        setIsLoaded(true);
       }, (error) => {
         console.error("Connection dropped, reconnecting...", error);
         if (dataTimeout) clearTimeout(dataTimeout);
-        setIsLoaded(true); // افتح الموقع حتى لو في إيرور
+        setIsLoaded(true);
         if (isComponentMounted) {
           setTimeout(() => {
             unsubscribeSnapshot();
@@ -352,7 +359,6 @@ export default function App() {
         try {
           const querySnapshot = await getDocs(collection(db, 'artifacts', appId, 'usersList'));
           const usersList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          // ترتيب من الأحدث دخولاً للأقدم
           usersList.sort((a, b) => new Date(b.lastLogin) - new Date(a.lastLogin));
           setAdminUsersList(usersList);
         } catch (error) {
@@ -365,44 +371,40 @@ export default function App() {
   }, [currentView, isAdmin]);
 
   // تحديث البيانات محلياً ورفعها للسحابة بذكاء (Optimistic Saving)
-  const saveSubjectsData = (newSubjects) => {
-    setSubjects(newSubjects); // تحديث الشاشة فوراً في جزء من الثانية
+  const saveDataAndSync = (newSubjects, newStats) => {
+    setSubjects(newSubjects); 
+    setStats(newStats);
     
-    // حفظ في الكاش لسرعة التحميل (مفصول لكل مستخدم باستخدام الـ UID)
+    const payload = { subjects: newSubjects, stats: newStats };
+
     if (user) {
-      localStorage.setItem(`tracker_data_${user.uid}`, JSON.stringify(newSubjects));
+      localStorage.setItem(`tracker_data_${user.uid}`, JSON.stringify(payload));
     } else {
-      localStorage.setItem('tracker_data', JSON.stringify(newSubjects));
+      localStorage.setItem('tracker_data', JSON.stringify(payload));
     }
 
     if (!user || !db) return;
 
-    setIsSyncing(true); // إظهار "جاري الحفظ..."
+    setIsSyncing(true);
 
-    // إلغاء أي أمر حفظ قديم لو المستخدم ضغط بسرعة (تجميع الطلبات)
     if (syncTimeoutRef.current) {
       clearTimeout(syncTimeoutRef.current);
     }
 
-    // نأخر الحفظ 800 ملي ثانية عشان نبعت كل حاجة مرة واحدة
     syncTimeoutRef.current = setTimeout(() => {
       const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'trackerData', 'main');
-      
-      // Fire and forget: نبعت الداتا للفايربيس ونخليه هو يتعامل (حتى لو النت ضعيف هيحفظها محلي عنده ويرفعها لما النت ييجي)
-      setDoc(docRef, { subjects: newSubjects }, { merge: true })
+      setDoc(docRef, payload, { merge: true })
         .catch(err => console.error("Save error:", err));
-      
-      // إخفاء "جاري الحفظ..." وإظهار "تم الحفظ" فوراً للراحة النفسية للمستخدم!
       setIsSyncing(false);
     }, 800); 
   };
 
-  // ---------------- إدارة المواد ----------------
+  // ---------------- إدارة المواد والمحاضرات ----------------
   const addSubject = (e) => {
     e.preventDefault();
     if (!newSubjectName.trim()) return;
     const newSub = { id: Date.now(), name: newSubjectName, lectures: [] };
-    saveSubjectsData([...subjects, newSub]);
+    saveDataAndSync([...subjects, newSub], stats);
     setActiveSubjectId(newSub.id);
     setNewSubjectName('');
   };
@@ -410,7 +412,7 @@ export default function App() {
   const deleteSubject = (id) => {
     if (window.confirm("هل أنت متأكد من حذف هذه المادة بكل محاضراتها؟")) {
       const updatedSubjects = subjects.filter(sub => sub.id !== id);
-      saveSubjectsData(updatedSubjects);
+      saveDataAndSync(updatedSubjects, stats);
       if (activeSubjectId === id && updatedSubjects.length > 0) {
         setActiveSubjectId(updatedSubjects[0].id);
       } else if (updatedSubjects.length === 0) {
@@ -426,16 +428,14 @@ export default function App() {
 
   const saveEditSubject = (id) => {
     if (!editingSubjectName.trim()) { setEditingSubjectId(null); return; }
-    saveSubjectsData(subjects.map(s => s.id === id ? { ...s, name: editingSubjectName } : s));
+    saveDataAndSync(subjects.map(s => s.id === id ? { ...s, name: editingSubjectName } : s), stats);
     setEditingSubjectId(null);
   };
 
-  // ---------------- إدارة المحاضرات ----------------
   const addLecture = (e) => {
     e.preventDefault();
     if (!newLectureName.trim() || !activeSubjectId) return;
     
-    // الإضافة الجماعية (Bulk Add)
     const lectureNames = newLectureName
       .split(/[\n,]+/) 
       .map(name => name.trim().replace(/^-\s*/, ''))
@@ -448,13 +448,13 @@ export default function App() {
       reviewCount: 0
     }));
 
-    saveSubjectsData(subjects.map(sub => sub.id === activeSubjectId ? { ...sub, lectures: [...sub.lectures, ...newLectures] } : sub));
+    saveDataAndSync(subjects.map(sub => sub.id === activeSubjectId ? { ...sub, lectures: [...sub.lectures, ...newLectures] } : sub), stats);
     setNewLectureName('');
   };
 
   const deleteLecture = (subjectId, lectureId) => {
     if (window.confirm("هل أنت متأكد من حذف هذه المحاضرة؟")) {
-      saveSubjectsData(subjects.map(sub => sub.id === subjectId ? { ...sub, lectures: sub.lectures.filter(l => l.id !== lectureId) } : sub));
+      saveDataAndSync(subjects.map(sub => sub.id === subjectId ? { ...sub, lectures: sub.lectures.filter(l => l.id !== lectureId) } : sub), stats);
     }
   };
 
@@ -465,26 +465,26 @@ export default function App() {
 
   const saveEditLecture = (subjectId, lectureId) => {
     if (!editingLectureName.trim()) { setEditingLectureId(null); return; }
-    saveSubjectsData(subjects.map(sub => {
+    saveDataAndSync(subjects.map(sub => {
       if (sub.id === subjectId) {
         return { ...sub, lectures: sub.lectures.map(l => l.id === lectureId ? { ...l, name: editingLectureName } : l) };
       }
       return sub;
-    }));
+    }), stats);
     setEditingLectureId(null);
   };
 
   const toggleLectureTask = (subjectId, lectureId, taskKey) => {
-    saveSubjectsData(subjects.map(sub => {
+    saveDataAndSync(subjects.map(sub => {
       if (sub.id === subjectId) {
         return { ...sub, lectures: sub.lectures.map(l => l.id === lectureId ? { ...l, [taskKey]: !l[taskKey] } : l) };
       }
       return sub;
-    }));
+    }), stats);
   };
 
   const updateReviewCount = (subjectId, lectureId, increment) => {
-    saveSubjectsData(subjects.map(sub => {
+    saveDataAndSync(subjects.map(sub => {
       if (sub.id === subjectId) {
         return {
           ...sub, lectures: sub.lectures.map(l => {
@@ -496,10 +496,9 @@ export default function App() {
         };
       }
       return sub;
-    }));
+    }), stats);
   };
 
-  // ---------------- دوال مساعدة ----------------
   const getProgress = (subject) => {
     if (!subject || !subject.lectures || subject.lectures.length === 0) return 0;
     const totalTasks = subject.lectures.length * 6;
@@ -527,6 +526,31 @@ export default function App() {
     }).format(date);
   };
 
+  // --- حساب الإحصائيات الزمنية للمذاكرة ---
+  const calculateStudyTime = (period) => {
+    const now = new Date();
+    let totalSeconds = 0;
+    
+    stats.forEach(stat => {
+      const statDate = new Date(stat.date);
+      if (period === 'day' && statDate.toDateString() === now.toDateString()) {
+        totalSeconds += stat.durationSeconds;
+      } else if (period === 'week') {
+        const diffTime = Math.abs(now - statDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        if (diffDays <= 7) totalSeconds += stat.durationSeconds;
+      } else if (period === 'month') {
+        if (statDate.getMonth() === now.getMonth() && statDate.getFullYear() === now.getFullYear()) {
+          totalSeconds += stat.durationSeconds;
+        }
+      }
+    });
+
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    return { hours, minutes };
+  };
+
   const activeSubject = subjects.find(s => s.id === activeSubjectId);
 
   const taskDefinitions = [
@@ -540,7 +564,6 @@ export default function App() {
 
   // ---------------- الشاشات ----------------
 
-  // شاشة التحميل الأولية
   if (authLoading) {
     return (
       <div className={`min-h-screen flex flex-col items-center justify-center ${darkMode ? 'bg-slate-900 text-indigo-400' : 'bg-slate-50 text-indigo-600'}`} dir="rtl">
@@ -550,7 +573,6 @@ export default function App() {
     );
   }
 
-  // شاشة تسجيل الدخول
   if (!user) {
     return (
       <div className={`min-h-screen flex flex-col items-center justify-center p-4 transition-colors duration-300 ${darkMode ? 'bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`} dir="rtl">
@@ -581,16 +603,11 @@ export default function App() {
             </svg>
             سجل دخولك بواسطة جوجل
           </button>
-          
-          <p className={`mt-6 text-sm ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-            بياناتك محفوظة بأمان وسرية تامة على السحابة.
-          </p>
         </div>
       </div>
     );
   }
 
-  // شاشة الانتظار لجلب البيانات بعد تسجيل الدخول
   if (!isLoaded && currentView === 'tracker') {
     return (
       <div className={`min-h-screen flex flex-col items-center justify-center ${darkMode ? 'bg-slate-900 text-indigo-400' : 'bg-slate-50 text-indigo-600'}`} dir="rtl">
@@ -601,7 +618,8 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen font-sans pb-12 transition-colors duration-300 ${darkMode ? 'bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`} dir="rtl">
+    <div className={`min-h-screen font-sans pb-24 transition-colors duration-300 ${darkMode ? 'bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`} dir="rtl">
+      
       {/* الهيدر */}
       <header className={`${darkMode ? 'bg-slate-800 border-b border-slate-700' : 'bg-gradient-to-r from-indigo-700 to-indigo-500 shadow-md'} text-white p-3 sticky top-0 z-50 transition-colors`}>
         <div className="container mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -613,14 +631,14 @@ export default function App() {
             </div>
             
             <button 
-              onClick={() => setCurrentView('audio')}
+              onClick={() => setCurrentView('pomodoro')}
               className={`hidden md:flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                currentView === 'audio' 
+                currentView === 'pomodoro' 
                 ? 'bg-white text-indigo-600 shadow-sm' 
                 : (darkMode ? 'bg-slate-700 text-indigo-300 hover:bg-slate-600' : 'bg-indigo-800/50 text-indigo-100 hover:bg-indigo-800')
               }`}
             >
-              <Headphones size={16} /> مقسم الريكوردات
+              <Timer size={16} /> بومودورو والإحصائيات
             </button>
 
             {isAdmin && (
@@ -638,7 +656,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* مؤشر الحفظ السحابي */}
             {currentView === 'tracker' && (
               <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm ${darkMode ? 'bg-slate-700' : 'bg-indigo-900/30'}`}>
                 {isSyncing ? (
@@ -659,7 +676,6 @@ export default function App() {
             
             <div className="h-6 w-px bg-white/20 mx-1"></div>
 
-            {/* بروفايل المستخدم وتسجيل الخروج */}
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 bg-black/20 rounded-full pr-1 pl-3 py-1">
                 {user.photoURL ? (
@@ -681,7 +697,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* ---------------- لوحة تحكم الإدارة (تظهر للمدير فقط) ---------------- */}
+      {/* ---------------- لوحة تحكم الإدارة ---------------- */}
       {currentView === 'admin' && isAdmin ? (
         <main className="container mx-auto p-4 mt-6">
           <div className={`rounded-3xl p-6 md:p-8 border shadow-sm mb-6 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
@@ -695,7 +711,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* إحصائيات سريعة */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
               <div className={`p-6 rounded-2xl border flex flex-col items-center justify-center text-center ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-indigo-50 border-indigo-100'}`}>
                 <Users size={32} className="text-indigo-500 mb-2" />
@@ -704,7 +719,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* جدول المستخدمين */}
             <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><Users size={20}/> قائمة الطلاب</h3>
             
             {loadingAdmin ? (
@@ -753,184 +767,219 @@ export default function App() {
             )}
           </div>
         </main>
-      ) : currentView === 'audio' ? (
+
+      ) : currentView === 'pomodoro' ? (
       
-      /* ---------------- صفحة مقسم الصوتيات (Audio Splitter) ---------------- */
-      <main className="container mx-auto p-4 mt-6 max-w-4xl">
+      /* ---------------- صفحة بومودورو والإحصائيات ---------------- */
+      <main className="container mx-auto p-4 mt-6 max-w-5xl">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className={`text-3xl font-bold flex items-center gap-3 ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}>
-              <Scissors className="text-indigo-500" size={32} /> مقسم الريكوردات الذكي
+              <Timer className="text-indigo-500" size={32} /> مؤقت المذاكرة (بومودورو)
             </h2>
-            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>قم بجلب أو رفع الريكورد الطويل وسنقوم بتقسيمه لك لمهام صغيرة.</p>
+            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>حدد المادة، ركز في دراستك، وسنقوم بتسجيل إنجازك تلقائياً.</p>
           </div>
           <button onClick={() => setCurrentView('tracker')} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition ${darkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white shadow-sm text-slate-600 hover:bg-slate-50'}`}>
-            <ArrowLeft size={18} /> العودة
+            <ArrowLeft size={18} /> العودة للجدول
           </button>
         </div>
 
-        <div className={`rounded-3xl p-6 border shadow-sm mb-6 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-          {/* الخطوة 1: رفع أو جلب الملف */}
-          <div className="mb-8">
-            <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>
-              <span className="bg-indigo-100 text-indigo-600 w-6 h-6 rounded-full flex items-center justify-center text-sm">1</span> 
-              اختر مصدر الريكورد
-            </h3>
-            
-            {/* أزرار اختيار الطريقة */}
-            <div className={`flex p-1 mb-6 rounded-xl border w-full max-w-md mx-auto ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-100 border-slate-200'}`}>
+        <div className="grid lg:grid-cols-2 gap-6">
+          {/* قسم المؤقت */}
+          <div className={`rounded-3xl p-8 border shadow-sm flex flex-col items-center justify-center transition-colors relative overflow-hidden ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            {/* أزرار الوضع */}
+            <div className={`flex p-1 mb-8 rounded-xl border w-full max-w-sm z-10 ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-100 border-slate-200'}`}>
               <button 
-                onClick={() => setUploadMethod('local')}
-                className={`flex-1 py-2 px-4 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 ${uploadMethod === 'local' ? (darkMode ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-indigo-600 shadow-sm') : (darkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700')}`}
+                onClick={() => { setTimerMode('work'); setIsActive(false); }}
+                className={`flex-1 py-2 px-2 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1 ${timerMode === 'work' ? 'bg-indigo-600 text-white shadow-sm' : (darkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700')}`}
               >
-                <CloudUpload size={18}/> ملف من الجهاز
+                <Brain size={16}/> تركيز
               </button>
               <button 
-                onClick={() => setUploadMethod('link')}
-                className={`flex-1 py-2 px-4 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 ${uploadMethod === 'link' ? (darkMode ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-indigo-600 shadow-sm') : (darkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700')}`}
+                onClick={() => { setTimerMode('shortBreak'); setIsActive(false); }}
+                className={`flex-1 py-2 px-2 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1 ${timerMode === 'shortBreak' ? 'bg-green-500 text-white shadow-sm' : (darkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700')}`}
               >
-                <LinkIcon size={18}/> رابط خارجي
+                <Coffee size={16}/> بريك قصير
+              </button>
+              <button 
+                onClick={() => { setTimerMode('longBreak'); setIsActive(false); }}
+                className={`flex-1 py-2 px-2 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1 ${timerMode === 'longBreak' ? 'bg-blue-500 text-white shadow-sm' : (darkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700')}`}
+              >
+                <Coffee size={16}/> بريك طويل
               </button>
             </div>
 
-            {/* طريقة 1: رفع ملف محلي */}
-            {uploadMethod === 'local' && (
-              <div className={`border-2 border-dashed rounded-2xl p-8 text-center transition ${darkMode ? 'border-slate-600 bg-slate-700/30' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}>
-                <input type="file" accept="audio/*" onChange={handleAudioUpload} className="hidden" id="audio-upload" />
-                <label htmlFor="audio-upload" className="cursor-pointer flex flex-col items-center">
-                  <Headphones size={48} className={`mb-4 ${audioFile ? 'text-green-500' : (darkMode ? 'text-slate-500' : 'text-slate-400')}`} />
-                  <span className={`font-medium text-lg ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                    {audioFile ? audioFile.name : 'اضغط هنا لاختيار ملف صوتي من جهازك'}
-                  </span>
-                  {audioDuration > 0 && (
-                    <span className="mt-2 text-sm text-green-600 font-bold bg-green-100 px-3 py-1 rounded-full">
-                      المدة الكلية: {formatTime(audioDuration)}
-                    </span>
-                  )}
-                </label>
-                
-                {/* 🎧 معاينة الريكورد (Audio Preview) */}
-                {audioFile && (
-                  <div className="mt-6 w-full max-w-xl mx-auto flex flex-col items-center animate-in fade-in zoom-in duration-300">
-                    <span className={`text-xs font-bold mb-2 flex items-center gap-1 ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}><PlayCircle size={16}/> معاينة الصوت</span>
-                    <audio controls src={URL.createObjectURL(audioFile)} className="w-full h-10 outline-none rounded-full" />
-                  </div>
-                )}
+            {/* دائرة المؤقت */}
+            <div className="relative w-64 h-64 md:w-80 md:h-80 flex items-center justify-center mb-8 z-10">
+              <svg className="absolute top-0 left-0 w-full h-full transform -rotate-90">
+                <circle 
+                  cx="50%" cy="50%" r="48%" fill="none" strokeWidth="8" 
+                  className={`${darkMode ? 'stroke-slate-700' : 'stroke-slate-100'}`} 
+                />
+                <circle 
+                  cx="50%" cy="50%" r="48%" fill="none" strokeWidth="8" 
+                  strokeLinecap="round"
+                  className={`transition-all duration-1000 ease-linear ${timerMode === 'work' ? 'stroke-indigo-500' : timerMode === 'shortBreak' ? 'stroke-green-500' : 'stroke-blue-500'}`}
+                  strokeDasharray={`${2 * Math.PI * (window.innerWidth >= 768 ? 150 : 120)}`} // Approximate circumference
+                  strokeDashoffset={`${(1 - (timeLeft / (pomodoroSettings[timerMode] * 60))) * (2 * Math.PI * (window.innerWidth >= 768 ? 150 : 120))}`}
+                />
+              </svg>
+              <div className="text-center">
+                <span className={`text-6xl md:text-7xl font-black font-mono block ${timerMode === 'work' ? 'text-indigo-500' : timerMode === 'shortBreak' ? 'text-green-500' : 'text-blue-500'}`}>
+                  {formatTimerDisplay(timeLeft)}
+                </span>
+                <span className={`text-sm md:text-base font-medium uppercase tracking-widest mt-2 block ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  {timerMode === 'work' ? 'وقت التركيز' : 'وقت الراحة'}
+                </span>
               </div>
-            )}
+            </div>
 
-            {/* طريقة 2: جلب من رابط */}
-            {uploadMethod === 'link' && (
-              <div className={`border-2 rounded-2xl p-6 transition ${darkMode ? 'border-slate-600 bg-slate-700/30' : 'border-slate-300 bg-slate-50'}`}>
-                <div className="flex justify-center gap-4 mb-6">
-                  <span className={`flex items-center gap-1 text-sm font-medium ${darkMode ? 'text-red-400' : 'text-red-500'}`}><Video size={16}/> يوتيوب</span>
-                  <span className={`flex items-center gap-1 text-sm font-medium ${darkMode ? 'text-blue-400' : 'text-blue-500'}`}><Cloud size={16}/> تليجرام</span>
-                  <span className={`flex items-center gap-1 text-sm font-medium ${darkMode ? 'text-yellow-400' : 'text-yellow-600'}`}><CloudUpload size={16}/> درايف</span>
-                </div>
-                <form onSubmit={handleLinkSubmit} className="flex flex-col md:flex-row gap-3">
-                  <input 
-                    type="url" 
-                    placeholder="الصق الرابط هنا (YouTube, Telegram, Drive)..." 
-                    value={audioLink}
-                    onChange={(e) => setAudioLink(e.target.value)}
-                    className={`flex-1 rounded-xl px-4 py-3 outline-none focus:ring-2 ${darkMode ? 'bg-slate-800 text-white border-slate-600 focus:ring-indigo-500' : 'bg-white border border-slate-300 focus:ring-indigo-300'}`}
-                  />
-                  <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold transition flex items-center justify-center gap-2">
-                    <CloudUpload size={20}/> جلب الملف
-                  </button>
-                </form>
+            {/* أزرار التحكم */}
+            <div className="flex items-center gap-4 z-10">
+              <button 
+                onClick={resetTimer}
+                className={`w-14 h-14 rounded-full flex items-center justify-center transition border-2 ${darkMode ? 'border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-white' : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
+              >
+                <RotateCcw size={24} />
+              </button>
+              <button 
+                onClick={toggleTimer}
+                className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition transform hover:scale-105 ${
+                  isActive 
+                  ? 'bg-red-500 text-white shadow-red-500/30' 
+                  : (timerMode === 'work' ? 'bg-indigo-600 text-white shadow-indigo-600/30' : timerMode === 'shortBreak' ? 'bg-green-500 text-white shadow-green-500/30' : 'bg-blue-500 text-white shadow-blue-500/30')
+                }`}
+              >
+                {isActive ? <Pause size={32} /> : <Play size={32} className="ml-2" />}
+              </button>
+              <button 
+                onClick={() => setShowTimerSettings(!showTimerSettings)}
+                className={`w-14 h-14 rounded-full flex items-center justify-center transition border-2 ${showTimerSettings ? 'bg-slate-200 dark:bg-slate-600 border-transparent' : ''} ${darkMode ? 'border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-white' : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
+              >
+                <Settings size={24} />
+              </button>
+            </div>
+
+            {/* اختيار المادة */}
+            {timerMode === 'work' && (
+              <div className="mt-8 w-full max-w-sm z-10">
+                <label className={`block text-sm font-bold mb-2 text-center ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>ماذا ستذاكر الآن؟</label>
+                <select 
+                  value={selectedSubjectForTimer} 
+                  onChange={(e) => setSelectedSubjectForTimer(e.target.value)}
+                  className={`w-full rounded-xl px-4 py-3 outline-none focus:ring-2 text-center font-medium shadow-sm border ${darkMode ? 'bg-slate-700 text-white border-slate-600 focus:ring-indigo-500' : 'bg-white border-slate-300 focus:ring-indigo-300'}`}
+                >
+                  <option value="">-- اختر مادة لتسجيل الإحصائيات --</option>
+                  <option value="general">مذاكرة عامة (بدون مادة محددة)</option>
+                  {subjects.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
               </div>
             )}
+            
+            {/* خلفية تجميلية */}
+            <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] rounded-full blur-3xl opacity-5 pointer-events-none ${timerMode === 'work' ? 'bg-indigo-500' : timerMode === 'shortBreak' ? 'bg-green-500' : 'bg-blue-500'}`}></div>
           </div>
 
-          {/* الخطوة 2: إعدادات التقسيم */}
-          {audioFile && audioDuration > 0 && (
-            <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>
-                <span className="bg-indigo-100 text-indigo-600 w-6 h-6 rounded-full flex items-center justify-center text-sm">2</span> 
-                كيف تريد التقسيم؟
-              </h3>
-              
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className={`border rounded-2xl p-5 transition cursor-pointer ${splitMode === 'parts' ? (darkMode ? 'border-indigo-500 bg-indigo-900/20' : 'border-indigo-500 bg-indigo-50/50') : (darkMode ? 'border-slate-600' : 'border-slate-200')}`} onClick={() => setSplitMode('parts')}>
-                  <div className="flex items-center gap-3 mb-4">
-                    <input type="radio" checked={splitMode === 'parts'} readOnly className="w-5 h-5 accent-indigo-600" />
-                    <ListOrdered size={20} className={darkMode ? 'text-indigo-400' : 'text-indigo-600'} />
-                    <span className={`font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>حسب عدد الأجزاء</span>
+          {/* قسم الإحصائيات والإعدادات */}
+          <div className="flex flex-col gap-6">
+            
+            {/* الإعدادات (تظهر عند الضغط على الترس) */}
+            {showTimerSettings && (
+              <div className={`rounded-3xl p-6 border shadow-sm animate-in slide-in-from-top-4 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}><Settings size={20}/> إعدادات الأوقات (بالدقائق)</h3>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>التركيز</label>
+                    <input 
+                      type="number" min="1" max="120" 
+                      value={pomodoroSettings.work} 
+                      onChange={(e) => {
+                        setPomodoroSettings({...pomodoroSettings, work: Number(e.target.value)});
+                        if(timerMode === 'work' && !isActive) setTimeLeft(Number(e.target.value) * 60);
+                      }}
+                      className={`w-full rounded-xl px-3 py-2 text-center outline-none border focus:border-indigo-500 ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`}
+                    />
                   </div>
-                  {splitMode === 'parts' && (
-                    <div className="pl-8">
-                      <label className={`block text-sm mb-2 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>كم جزء تريد؟</label>
-                      <input type="number" min="2" max="20" value={splitParts} onChange={(e) => setSplitParts(Number(e.target.value))} className={`w-full rounded-xl px-4 py-2 border focus:ring-2 outline-none ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-slate-300'}`} />
-                    </div>
-                  )}
-                </div>
-
-                <div className={`border rounded-2xl p-5 transition cursor-pointer ${splitMode === 'time' ? (darkMode ? 'border-indigo-500 bg-indigo-900/20' : 'border-indigo-500 bg-indigo-50/50') : (darkMode ? 'border-slate-600' : 'border-slate-200')}`} onClick={() => setSplitMode('time')}>
-                  <div className="flex items-center gap-3 mb-4">
-                    <input type="radio" checked={splitMode === 'time'} readOnly className="w-5 h-5 accent-indigo-600" />
-                    <Timer size={20} className={darkMode ? 'text-indigo-400' : 'text-indigo-600'} />
-                    <span className={`font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>حسب وقت محدد</span>
+                  <div>
+                    <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-green-400' : 'text-green-600'}`}>بريك قصير</label>
+                    <input 
+                      type="number" min="1" max="30" 
+                      value={pomodoroSettings.shortBreak} 
+                      onChange={(e) => {
+                        setPomodoroSettings({...pomodoroSettings, shortBreak: Number(e.target.value)});
+                        if(timerMode === 'shortBreak' && !isActive) setTimeLeft(Number(e.target.value) * 60);
+                      }}
+                      className={`w-full rounded-xl px-3 py-2 text-center outline-none border focus:border-green-500 ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`}
+                    />
                   </div>
-                  {splitMode === 'time' && (
-                    <div className="pl-8">
-                      <label className={`block text-sm mb-2 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>مدة كل جزء (بالدقائق)</label>
-                      <input type="number" min="1" max="120" value={splitTimeMin} onChange={(e) => setSplitTimeMin(Number(e.target.value))} className={`w-full rounded-xl px-4 py-2 border focus:ring-2 outline-none ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-slate-300'}`} />
-                    </div>
-                  )}
+                  <div>
+                    <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>بريك طويل</label>
+                    <input 
+                      type="number" min="1" max="60" 
+                      value={pomodoroSettings.longBreak} 
+                      onChange={(e) => {
+                        setPomodoroSettings({...pomodoroSettings, longBreak: Number(e.target.value)});
+                        if(timerMode === 'longBreak' && !isActive) setTimeLeft(Number(e.target.value) * 60);
+                      }}
+                      className={`w-full rounded-xl px-3 py-2 text-center outline-none border focus:border-blue-500 ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`}
+                    />
+                  </div>
                 </div>
               </div>
+            )}
 
-              <div className="mt-6 flex flex-col md:flex-row gap-4 items-center">
-                <input 
-                  type="text" 
-                  placeholder="اسم المحاضرة الأساسي (مثلاً: محاضرة الجراحة)"
-                  value={audioBaseName}
-                  onChange={(e) => setAudioBaseName(e.target.value)}
-                  className={`flex-1 w-full rounded-xl px-4 py-3 border focus:ring-2 outline-none ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-slate-300'}`}
-                />
-                <button onClick={generateSegments} className="w-full md:w-auto px-8 py-3 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 text-white transition flex justify-center items-center gap-2">
-                  <Scissors size={20} /> تقسيم الريكورد
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* الخطوة 3: عرض الأجزاء والحفظ */}
-          {audioSegments.length > 0 && (
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>
-                <span className="bg-green-100 text-green-600 w-6 h-6 rounded-full flex items-center justify-center text-sm"><Check size={14}/></span> 
-                الأجزاء المستخرجة ({audioSegments.length})
+            {/* الإحصائيات */}
+            <div className={`rounded-3xl p-6 border shadow-sm flex-1 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <h3 className={`text-xl font-bold mb-6 flex items-center gap-2 pb-3 border-b ${darkMode ? 'text-slate-200 border-slate-700' : 'text-slate-800 border-slate-100'}`}>
+                <BarChart2 className="text-indigo-500" size={24}/> حصاد المذاكرة
               </h3>
               
-              <div className={`border rounded-2xl overflow-hidden mb-6 ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-                {audioSegments.map((seg, idx) => (
-                  <div key={seg.id} className={`p-4 flex items-center justify-between ${idx !== audioSegments.length - 1 ? (darkMode ? 'border-b border-slate-700' : 'border-b border-slate-100') : ''} ${darkMode ? 'bg-slate-800' : 'bg-white'}`}>
-                    <span className={`font-medium ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>{seg.name}</span>
-                    <span className="text-sm font-mono bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg">
-                      {seg.start} ➝ {seg.end}
+              <div className="grid grid-cols-1 gap-4 mb-6">
+                <div className={`p-5 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-indigo-900/20 border-indigo-500/30' : 'bg-indigo-50 border-indigo-100'}`}>
+                  <div>
+                    <span className={`block text-sm font-bold mb-1 ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>اليوم</span>
+                    <span className={`text-2xl font-black ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}>
+                      {calculateStudyTime('day').hours} <span className="text-sm font-medium">ساعة</span> و {calculateStudyTime('day').minutes} <span className="text-sm font-medium">دقيقة</span>
                     </span>
                   </div>
-                ))}
-              </div>
-
-              {/* زر رفع الملفات لـ Google Drive */}
-              <div className={`p-6 rounded-2xl border flex flex-col md:flex-row items-center justify-between gap-4 ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
-                <div>
-                  <h4 className={`font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>حفظ الملفات في درايف</h4>
-                  <p className={`text-sm mt-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>قم بقص وتصدير هذه الملفات إلى حسابك على Google Drive.</p>
+                  <div className="w-12 h-12 rounded-full bg-indigo-500/20 text-indigo-500 flex items-center justify-center">
+                    <Clock size={24} />
+                  </div>
                 </div>
-                <button 
-                  onClick={handleDriveUpload}
-                  className="w-full md:w-auto px-6 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-700 text-white transition shadow-md flex justify-center items-center gap-2"
-                >
-                  <CloudUpload size={20} /> رفع لـ Google Drive
-                </button>
+
+                <div className={`p-5 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-green-900/20 border-green-500/30' : 'bg-green-50 border-green-100'}`}>
+                  <div>
+                    <span className={`block text-sm font-bold mb-1 ${darkMode ? 'text-green-400' : 'text-green-600'}`}>هذا الأسبوع</span>
+                    <span className={`text-2xl font-black ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}>
+                      {calculateStudyTime('week').hours} <span className="text-sm font-medium">ساعة</span> و {calculateStudyTime('week').minutes} <span className="text-sm font-medium">دقيقة</span>
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 rounded-full bg-green-500/20 text-green-500 flex items-center justify-center">
+                    <Calendar size={24} />
+                  </div>
+                </div>
+
+                <div className={`p-5 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-purple-900/20 border-purple-500/30' : 'bg-purple-50 border-purple-100'}`}>
+                  <div>
+                    <span className={`block text-sm font-bold mb-1 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>هذا الشهر</span>
+                    <span className={`text-2xl font-black ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}>
+                      {calculateStudyTime('month').hours} <span className="text-sm font-medium">ساعة</span> و {calculateStudyTime('month').minutes} <span className="text-sm font-medium">دقيقة</span>
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 rounded-full bg-purple-500/20 text-purple-500 flex items-center justify-center">
+                    <BarChart2 size={24} />
+                  </div>
+                </div>
               </div>
 
+              <div className={`p-4 rounded-xl text-center text-sm font-medium ${darkMode ? 'bg-slate-700/50 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+                لقد أكملت <span className="font-bold text-indigo-500">{completedPomodoros}</span> جلسات تركيز بنجاح منذ فتح الموقع! 👏
+              </div>
             </div>
-          )}
+
+          </div>
         </div>
       </main>
 
@@ -1089,10 +1138,10 @@ export default function App() {
                               </div>
                             ) : (
                               <>
-                                <h3 className={`font-bold text-lg pr-1 ${isDone ? (darkMode ? 'text-slate-500 line-through decoration-green-500' : 'text-slate-500 line-through decoration-green-400') : (darkMode ? 'text-slate-200' : 'text-slate-800')}`}>
+                                <h3 className={`font-bold text-lg pr-1 flex items-center gap-2 ${isDone ? (darkMode ? 'text-slate-500 line-through decoration-green-500' : 'text-slate-500 line-through decoration-green-400') : (darkMode ? 'text-slate-200' : 'text-slate-800')}`}>
                                   {lecture.name}
                                 </h3>
-                                <div className={`flex gap-1 rounded-lg p-1 border ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
+                                <div className={`flex gap-1 rounded-lg p-1 border shrink-0 ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
                                   <button onClick={() => startEditLecture(lecture)} className={`p-1.5 transition ${darkMode ? 'text-slate-400 hover:text-indigo-400' : 'text-slate-400 hover:text-indigo-600'}`}><Pencil size={14} /></button>
                                   <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className={`p-1.5 transition ${darkMode ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-600'}`}><Trash2 size={14} /></button>
                                 </div>
