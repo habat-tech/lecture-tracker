@@ -739,6 +739,10 @@ export default function App() {
                       <div className={`w-full rounded-full h-3 mb-2 overflow-hidden border ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-100 border-slate-200'}`}>
                         <div className="bg-gradient-to-l from-indigo-500 to-purple-500 h-full rounded-full transition-all duration-1000" style={{ width: `${getProgress(activeSubject)}%` }}></div>
                       </div>
+                      <div className={`flex gap-4 text-xs font-medium ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                        <span className="flex items-center gap-1"><CheckCircle size={14} className="text-green-500"/> إنجاز المادة: {getProgress(activeSubject)}%</span>
+                        <span className="flex items-center gap-1"><BookOpen size={14} className={darkMode ? 'text-indigo-400' : 'text-indigo-500'}/> المحاضرات: {activeSubject.lectures.length}</span>
+                      </div>
                     </div>
                     <div className="flex flex-col sm:flex-row w-full md:w-auto gap-2 shrink-0">
                       <form onSubmit={addLecture} className="flex flex-1 sm:flex-none gap-2">
