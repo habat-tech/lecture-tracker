@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Plus, Trash2, BookOpen, Check, Cloud, 
+  Plus, Trash, BookOpen, Check, Cloud, 
   Loader2, Pencil, X, Save, CheckCircle, Clock, List, Moon, Sun,
   LogOut, Shield, Users, Calendar, Timer, Play, Pause, RotateCcw, 
   Settings, BarChart, Coffee, Brain, Trophy, Download,
-  UploadCloud, Link as LinkIcon, Server, RefreshCw, UserCheck, UserX, AlertCircle, FileAudio, PlayCircle, DownloadCloud, HardDrive
+  RefreshCw, UserCheck, UserX
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -29,9 +29,6 @@ const firebaseConfig = {
 
 // ⚠️ إيميل المالك
 const ADMIN_EMAIL = "ahmed.ragab.alproda@gmail.com"; 
-
-// ⚠️ رابط سيرفر Hugging Face السحابي
-const HUGGING_FACE_API = "https://alproda-audio-processor-api.hf.space";
 
 let app, auth, db, appId;
 try {
@@ -90,20 +87,6 @@ export default function App() {
   const [selectedSubjectForTimer, setSelectedSubjectForTimer] = useState('');
   const [selectedLectureForTimer, setSelectedLectureForTimer] = useState('');
   const [showTimerSettings, setShowTimerSettings] = useState(false);
-
-  // Automation States
-  const [inputType, setInputType] = useState('local'); // 'url', 'local', or 'drive'
-  const [sourceUrl, setSourceUrl] = useState('');
-  const [localFile, setLocalFile] = useState(null);
-  const [splitMethod, setSplitMethod] = useState('time'); 
-  const [splitValueTime, setSplitValueTime] = useState('00:30:00');
-  const [splitValueParts, setSplitValueParts] = useState('4');
-  const [autoUploadDrive, setAutoUploadDrive] = useState(false);
-  const [isProcessingServer, setIsProcessingServer] = useState(false);
-  const [serverResult, setServerResult] = useState(null);
-  const [driveToken, setDriveToken] = useState(null);
-  const [driveFiles, setDriveFiles] = useState([]);
-  const [isLoadingDrive, setIsLoadingDrive] = useState(false);
 
   // ==========================================
   // Effects & Core Functions
@@ -176,35 +159,15 @@ export default function App() {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      provider.addScope('https://www.googleapis.com/auth/drive.file');
-      provider.addScope('https://www.googleapis.com/auth/drive.readonly');
-      
-      const result = await signInWithPopup(auth, provider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      if (credential && credential.accessToken) setDriveToken(credential.accessToken);
+      await signInWithPopup(auth, provider);
     } catch (error) { alert(`خطأ: ${error.message}`); }
-  };
-
-  const connectDrive = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
-      provider.addScope('https://www.googleapis.com/auth/drive.file');
-      provider.addScope('https://www.googleapis.com/auth/drive.readonly');
-      const result = await signInWithPopup(auth, provider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      if (credential && credential.accessToken) {
-        setDriveToken(credential.accessToken);
-        alert("تم الربط مع جوجل درايف بنجاح!");
-      }
-    } catch (error) { alert("تعذر ربط حساب جوجل درايف."); }
   };
 
   const handleLogout = async () => {
     try {
       await signOut(auth);
       setSubjects([]); setStats([]); setActiveSubjectId(null);
-      setCurrentView('tracker'); setIsActive(false); setIsAdmin(false); setDriveToken(null);
+      setCurrentView('tracker'); setIsActive(false); setIsAdmin(false);
     } catch (error) { console.error(error); }
   };
 
@@ -279,52 +242,6 @@ export default function App() {
   };
 
   // ==========================================
-  // Drive API Functions
-  // ==========================================
-  const fetchDriveList = async () => {
-    if (!driveToken) return connectDrive();
-    setIsLoadingDrive(true);
-    try {
-      const res = await fetch("https://www.googleapis.com/drive/v3/files?q=mimeType contains 'audio/' or mimeType contains 'video/'&fields=files(id,name,mimeType)&orderBy=modifiedTime desc&pageSize=20", {
-        headers: { Authorization: `Bearer ${driveToken}` }
-      });
-      if (!res.ok) throw new Error('فشل جلب الملفات');
-      const data = await res.json();
-      setDriveFiles(data.files || []);
-    } catch (e) { alert("فشل جلب الملفات من درايف. تأكد من إعطاء الصلاحيات."); }
-    setIsLoadingDrive(false);
-  };
-
-  const handleDriveFileSelect = async (file) => {
-    setIsLoadingDrive(true);
-    try {
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
-        headers: { Authorization: `Bearer ${driveToken}` }
-      });
-      const blob = await res.blob();
-      const f = new File([blob], file.name, { type: blob.type || 'audio/mpeg' });
-      f.isDrive = true;
-      setLocalFile(f);
-      alert(`تم استيراد ${file.name} بنجاح! جاهز للمعالجة.`);
-    } catch (e) { alert('فشل تحميل الملف من درايف.'); }
-    setIsLoadingDrive(false);
-  };
-
-  const uploadToDriveFrontend = async (blob, filename, token) => {
-    const metadata = { name: filename, mimeType: 'audio/mpeg' };
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-    form.append('file', blob);
-
-    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: form
-    });
-    return await res.json();
-  };
-
-  // ==========================================
   // Pomodoro
   // ==========================================
   useEffect(() => { if (!isActive) setTimeLeft(pomodoroSettings[timerMode] * 60); }, [timerMode, pomodoroSettings]);
@@ -361,66 +278,6 @@ export default function App() {
   };
 
   // ==========================================
-  // Automation Process
-  // ==========================================
-  const handleServerProcess = async (e) => {
-    e.preventDefault();
-    if (inputType === 'url' && !sourceUrl.trim()) return alert('أدخل الرابط أولاً!');
-    if ((inputType === 'local' || inputType === 'drive') && !localFile) return alert('اختر ملفاً أولاً!');
-    if (!HUGGING_FACE_API.includes('hf.space')) return alert('يرجى وضع رابط سيرفر Hugging Face الصحيح.');
-    if (autoUploadDrive && !driveToken) return connectDrive();
-
-    setIsProcessingServer(true);
-    setServerResult(null);
-
-    try {
-      const formData = new FormData();
-      formData.append('inputType', inputType === 'drive' ? 'local' : inputType);
-      formData.append('split_mode', splitMethod);
-      formData.append('split_value', splitMethod === 'time' ? splitValueTime : splitValueParts);
-      formData.append('auto_upload', 'false'); 
-      
-      if ((inputType === 'local' || inputType === 'drive') && localFile) {
-        formData.append('file', localFile);
-      } else {
-        formData.append('url', sourceUrl);
-      }
-
-      const response = await fetch(`${HUGGING_FACE_API}/process-audio`, {
-        method: 'POST',
-        body: formData 
-      });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || 'فشل السيرفر في معالجة الطلب.');
-      }
-
-      const data = await response.json();
-
-      if (autoUploadDrive && driveToken && data.parts) {
-        const newParts = [];
-        for (let i = 0; i < data.parts.length; i++) {
-          const part = data.parts[i];
-          try {
-             const audioRes = await fetch(`${HUGGING_FACE_API}${part.preview_url}`);
-             const audioBlob = await audioRes.blob();
-             const uploadRes = await uploadToDriveFrontend(audioBlob, `${data.title} - الجزء ${i+1}.mp3`, driveToken);
-             newParts.push({ ...part, drive_link: uploadRes.webViewLink });
-          } catch(err) { console.error("Upload error", err); newParts.push(part); }
-        }
-        data.parts = newParts;
-      }
-      setServerResult(data);
-    } catch (error) {
-      console.error(error);
-      alert(`خطأ: ${error.message}`);
-    } finally {
-      setIsProcessingServer(false);
-    }
-  };
-
-  // ==========================================
   // Tracker CRUD
   // ==========================================
   const addSubject = (e) => {
@@ -433,7 +290,7 @@ export default function App() {
   };
 
   const deleteSubject = (id) => {
-    if (window.confirm("حذف المادة؟")) {
+    if (window.confirm("حذف المادة بكافة محاضراتها؟")) {
       const updatedSubjects = subjects.filter(sub => sub.id !== id);
       saveDataAndSync(updatedSubjects, stats);
       if (activeSubjectId === id) setActiveSubjectId(updatedSubjects.length > 0 ? updatedSubjects[0].id : null);
@@ -508,7 +365,7 @@ export default function App() {
     return { hours: Math.floor(totalSeconds / 3600), minutes: Math.floor((totalSeconds % 3600) / 60), totalSeconds };
   };
 
-  // تعريف المتغير النشط بشكل دائم لتفادي أخطاء ReferenceError
+  // تعريف المتغيرات للاستخدام في JSX بشكل آمن
   const activeSubject = subjects.find(s => s.id === activeSubjectId);
   const myTotalStudy = calculateStudyTime('all');
   const myRank = getUserRank(myTotalStudy.totalSeconds);
@@ -590,7 +447,6 @@ export default function App() {
               <button onClick={() => setCurrentView('tracker')} className={`p-2 rounded-lg transition ${currentView === 'tracker' ? 'bg-white text-indigo-600' : 'hover:bg-white/20'}`}><List size={18} /></button>
               <button onClick={() => setCurrentView('pomodoro')} className={`p-2 rounded-lg transition ${currentView === 'pomodoro' ? 'bg-white text-indigo-600' : 'hover:bg-white/20'}`}><Timer size={18} /></button>
               <button onClick={() => setCurrentView('leaderboard')} className={`p-2 rounded-lg transition ${currentView === 'leaderboard' ? 'bg-amber-400 text-slate-900' : 'hover:bg-white/20'}`}><Trophy size={18} /></button>
-              <button onClick={() => setCurrentView('automation')} className={`p-2 rounded-lg transition ${currentView === 'automation' ? 'bg-amber-400 text-slate-900' : 'hover:bg-white/20'}`}><Server size={18} /></button>
               {isAdmin && <button onClick={() => setCurrentView('admin')} className={`p-2 rounded-lg transition ${currentView === 'admin' ? 'bg-red-500 text-white' : 'hover:bg-white/20'}`}><Shield size={18} /></button>}
             </div>
           </div>
@@ -622,141 +478,6 @@ export default function App() {
       </header>
 
       {/* Views */}
-      {currentView === 'automation' && (
-        <main className="container mx-auto p-4 mt-6 max-w-4xl animate-in fade-in slide-in-from-bottom-4">
-          <div className="mb-8">
-            <h2 className={`text-3xl font-bold flex items-center gap-3 ${darkMode ? 'text-amber-400' : 'text-amber-600'}`}><Server size={36} /> المعالج السحابي الذكي</h2>
-            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>اقطع المحاضرات الصوتية، استمع للمعاينة، وارفعها لجوجل درايف بضغطة زر!</p>
-          </div>
-          
-          <div className={`rounded-3xl p-6 md:p-8 border shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-            <div className="flex flex-col sm:flex-row mb-8 bg-slate-100 dark:bg-slate-700 p-1 rounded-xl gap-1">
-              <button onClick={() => { setInputType('local'); setServerResult(null); }} className={`flex-1 py-3 px-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all ${inputType === 'local' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`}><FileAudio size={18} /> الجهاز</button>
-              <button onClick={() => { setInputType('drive'); setServerResult(null); }} className={`flex-1 py-3 px-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all ${inputType === 'drive' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`}><HardDrive size={18} /> درايف</button>
-              <button onClick={() => { setInputType('url'); setServerResult(null); }} className={`flex-1 py-3 px-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all ${inputType === 'url' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`}><LinkIcon size={18} /> يوتيوب</button>
-            </div>
-
-            <form onSubmit={handleServerProcess} className="space-y-6">
-              {inputType === 'url' ? (
-                <div className="animate-in fade-in">
-                  <label className="block font-bold mb-2">رابط المحاضرة (يوتيوب أو رابط مباشر):</label>
-                  <div className="relative">
-                    <LinkIcon className="absolute right-4 top-3.5 text-slate-400" size={20} />
-                    <input type="url" required value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://youtube.com/..." className={`w-full rounded-xl pr-12 pl-4 py-3 border focus:ring-2 outline-none ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-300'}`} />
-                  </div>
-                  <div className={`mt-3 p-3 text-xs rounded-xl flex items-start gap-2 ${darkMode ? 'bg-blue-900/20 text-blue-300' : 'bg-blue-50 text-blue-800'}`}>
-                    <AlertCircle size={16} className="shrink-0" />
-                    <span>سيرفرات Hugging Face قد تقوم بحظر روابط يوتيوب أحياناً بسبب الضغط. يُفضل استخدام الرفع من الجهاز أو درايف كبديل.</span>
-                  </div>
-                </div>
-              ) : inputType === 'local' ? (
-                <div className="animate-in fade-in">
-                  <label className="block font-bold mb-2">اختر ملف صوت/فيديو من جهازك:</label>
-                  <div className={`border-2 border-dashed rounded-2xl p-8 text-center transition cursor-pointer ${darkMode ? 'border-slate-600 bg-slate-700/30 hover:bg-slate-700' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`} onClick={() => document.getElementById('local-upload').click()}>
-                    <input type="file" required accept="audio/*,video/*" onChange={(e) => setLocalFile(e.target.files[0])} className="hidden" id="local-upload" />
-                    <FileAudio size={48} className={`mx-auto mb-4 ${localFile && !localFile.isDrive ? 'text-green-500' : (darkMode ? 'text-slate-500' : 'text-slate-400')}`} />
-                    <span className={`font-medium text-lg ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{localFile && !localFile.isDrive ? localFile.name : 'اضغط هنا لاختيار ملف من جهازك'}</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="animate-in fade-in">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block font-bold">ملفاتك في Google Drive:</label>
-                    {!driveToken && <button type="button" onClick={connectDrive} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">ربط درايف الآن</button>}
-                  </div>
-                  {!driveToken ? (
-                    <div className={`p-8 rounded-2xl text-center border ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
-                      <HardDrive size={40} className="mx-auto mb-4 text-slate-400" />
-                      <p className="mb-4 font-medium">يرجى ربط حساب Google Drive الخاص بك لاستيراد المحاضرات.</p>
-                      <button type="button" onClick={connectDrive} className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold">ربط الحساب</button>
-                    </div>
-                  ) : (
-                    <div className={`border rounded-2xl p-4 ${darkMode ? 'border-slate-600 bg-slate-700/30' : 'border-slate-300 bg-slate-50'}`}>
-                       <button type="button" onClick={fetchDriveList} className="w-full flex items-center justify-center gap-2 py-2 px-4 mb-4 bg-white dark:bg-slate-800 border dark:border-slate-600 rounded-lg font-bold shadow-sm">
-                         <RefreshCw size={16} className={isLoadingDrive ? 'animate-spin' : ''} /> تحديث قائمة الملفات
-                       </button>
-                       {isLoadingDrive ? (
-                         <div className="flex justify-center py-6"><Loader2 className="animate-spin text-indigo-500" /></div>
-                       ) : driveFiles.length > 0 ? (
-                         <ul className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                           {driveFiles.map(f => (
-                             <li key={f.id} onClick={() => handleDriveFileSelect(f)} className={`p-3 rounded-lg border cursor-pointer transition ${localFile?.id === f.id ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 hover:border-indigo-300'}`}>
-                               <span className="font-medium text-sm block truncate">{f.name}</span>
-                             </li>
-                           ))}
-                         </ul>
-                       ) : (
-                         <p className="text-center py-6 text-sm text-slate-500">لا توجد ملفات صوتية/فيديو حديثة.</p>
-                       )}
-                    </div>
-                  )}
-                  {localFile && localFile.isDrive && <p className="mt-3 text-sm text-green-600 font-bold text-center"><CheckCircle size={16} className="inline mr-1" /> تم الاستيراد بنجاح.</p>}
-                </div>
-              )}
-
-              <div className={`p-6 rounded-2xl border ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-indigo-50/50 border-indigo-100'}`}>
-                <h3 className="font-bold mb-4 flex items-center gap-2"><Timer size={18}/> نظام التقطيع</h3>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <label className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer ${splitMethod === 'time' ? 'border-indigo-500 bg-indigo-500/10' : (darkMode ? 'border-slate-600' : 'border-slate-200')}`}>
-                    <input type="radio" checked={splitMethod === 'time'} onChange={() => setSplitMethod('time')} className="w-5 h-5 accent-indigo-500" />
-                    <div><span className="font-bold block">بالوقت (HH:MM:SS)</span></div>
-                  </label>
-                  <label className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer ${splitMethod === 'parts' ? 'border-indigo-500 bg-indigo-500/10' : (darkMode ? 'border-slate-600' : 'border-slate-200')}`}>
-                    <input type="radio" checked={splitMethod === 'parts'} onChange={() => setSplitMethod('parts')} className="w-5 h-5 accent-indigo-500" />
-                    <div><span className="font-bold block">بعدد الأجزاء</span></div>
-                  </label>
-                </div>
-                <div className="mt-4">
-                  {splitMethod === 'time' ? (
-                    <input type="text" pattern="[0-9]{2}:[0-9]{2}:[0-9]{2}" value={splitValueTime} onChange={(e) => setSplitValueTime(e.target.value)} placeholder="00:30:00" className={`w-full md:w-1/2 text-center font-mono text-lg tracking-widest rounded-xl px-4 py-2 border outline-none ${darkMode ? 'bg-slate-800 border-slate-600 text-white' : 'bg-white border-slate-300'}`} />
-                  ) : (
-                    <input type="number" min="2" max="20" value={splitValueParts} onChange={(e) => setSplitValueParts(e.target.value)} className={`w-full md:w-1/2 rounded-xl px-4 py-2 border outline-none ${darkMode ? 'bg-slate-800 border-slate-600 text-white' : 'bg-white border-slate-300'}`} />
-                  )}
-                </div>
-              </div>
-
-              <div className={`p-4 rounded-xl border flex items-center justify-between cursor-pointer ${autoUploadDrive ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-slate-200 dark:border-slate-700'}`} onClick={() => setAutoUploadDrive(!autoUploadDrive)}>
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${autoUploadDrive ? 'bg-green-100 text-green-600 dark:bg-green-800' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'}`}><UploadCloud size={20} /></div>
-                  <div>
-                    <h4 className="font-bold">الرفع التلقائي لـ Google Drive</h4>
-                    <p className="text-xs opacity-70">يتم الرفع مباشرة لحسابك لضمان السرعة وتخطي حظر السيرفر.</p>
-                  </div>
-                </div>
-                <div className={`w-12 h-6 rounded-full relative transition-colors ${autoUploadDrive ? 'bg-green-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
-                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${autoUploadDrive ? 'left-1' : 'right-1'}`}></div>
-                </div>
-              </div>
-
-              <button type="submit" disabled={isProcessingServer} className={`w-full py-4 rounded-xl font-black text-lg transition flex justify-center items-center gap-3 shadow-lg ${isProcessingServer ? 'bg-slate-500 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 text-white'}`}>
-                {isProcessingServer ? <><Loader2 className="animate-spin" size={24} /> جاري المعالجة (الرجاء عدم إغلاق الصفحة)...</> : <><UploadCloud size={24} /> بدء المعالجة {autoUploadDrive ? 'والرفع لدرايف' : ''}</>}
-              </button>
-            </form>
-
-            {serverResult && (
-              <div className={`mt-8 p-6 rounded-2xl border bg-slate-50 dark:bg-slate-800 dark:border-slate-700 animate-in zoom-in`}>
-                <h3 className="text-green-600 dark:text-green-400 font-black text-xl flex items-center gap-2 mb-2"><CheckCircle size={24}/> تمت العملية بنجاح!</h3>
-                <p className="font-bold mb-6">{serverResult.title}</p>
-                <div className="space-y-4">
-                  {serverResult.parts.map((part, idx) => (
-                    <div key={idx} className="p-4 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col gap-3">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2"><PlayCircle size={18}/> {part.name}</span>
-                        <div className="flex gap-2">
-                          {part.drive_link && <a href={part.drive_link} target="_blank" rel="noreferrer" className="flex items-center gap-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-xs font-bold hover:bg-green-200"><UploadCloud size={14}/> درايف</a>}
-                          <a href={`${HUGGING_FACE_API}${part.preview_url}`} download className="flex items-center gap-1 px-3 py-1.5 bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold hover:bg-indigo-200"><DownloadCloud size={14}/> تحميل</a>
-                        </div>
-                      </div>
-                      <audio controls className="w-full h-10 rounded-full outline-none" src={`${HUGGING_FACE_API}${part.preview_url}`}></audio>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </main>
-      )}
-
       {currentView === 'pomodoro' && (
         <main className="container mx-auto p-4 mt-6 max-w-5xl">
           <div className="flex items-center justify-between mb-6">
