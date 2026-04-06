@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
-  Plus, Trash2, BookOpen, Check, Cloud, 
+  Plus, Trash, BookOpen, Check, Cloud, 
   Loader2, Pencil, X, Save, CheckCircle, Clock, List, Moon, Sun,
   LogOut, Shield, Users, Calendar, Timer, Play, Pause, RotateCcw, 
   Settings, BarChart, Coffee, Brain, Trophy, Download, Target,
@@ -626,6 +626,7 @@ export default function App() {
                     {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                   
+                  {/* اختيار المحاضرة */}
                   {selectedSubjectForTimer && subjects.find(s => s.id.toString() === selectedSubjectForTimer.toString())?.lectures.length > 0 && (
                     <div className="animate-in fade-in slide-in-from-top-2">
                       <select value={selectedLectureForTimer} onChange={(e) => setSelectedLectureForTimer(e.target.value)} className={`w-full rounded-2xl px-5 py-3 text-sm font-bold outline-none border transition-all ${darkMode ? 'bg-indigo-900/30 text-indigo-200 border-indigo-700 focus:ring-2 focus:ring-indigo-500' : 'bg-indigo-50 text-indigo-800 border-indigo-200 focus:ring-2 focus:ring-indigo-300'}`}>
