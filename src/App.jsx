@@ -1,187 +1,1130 @@
-import os
-import json
-import uuid
-import tempfile
-import shutil
-import asyncio
-from typing import Optional
-from fastapi import FastAPI, HTTPException, Form, File, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-import yt_dlp
-from pydub import AudioSegment
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from pyrogram import Client, filters
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Plus, Trash2, BookOpen, Check, Cloud, 
+  Loader2, Pencil, X, Save, CheckCircle, Clock, List, Moon, Sun,
+  LogOut, Shield, Users, Calendar, Timer, Play, Pause, RotateCcw, 
+  Settings, BarChart, Coffee, Brain, Trophy, Download,
+  UploadCloud, Link as LinkIcon, Server, RefreshCw, UserCheck, UserX, AlertCircle, FileAudio, PlayCircle, DownloadCloud, HardDrive
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut 
+} from 'firebase/auth';
+import { 
+  getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection 
+} from 'firebase/firestore';
 
-app = FastAPI()
+// ==========================================
+// 1. إعدادات Firebase الخاصة بمشروعك
+// ==========================================
+const firebaseConfig = {
+  apiKey: "AIzaSyBj7ZV1HD3FnCqcPCv4wmu6tkordntcv8k",
+  authDomain: "lecture-tracker-3d731.firebaseapp.com",
+  projectId: "lecture-tracker-3d731",
+  storageBucket: "lecture-tracker-3d731.firebasestorage.app",
+  messagingSenderId: "804793313202",
+  appId: "1:804793313202:web:bbdf4798380879d59466ab",
+  measurementId: "G-J67PJTJEB5"
+};
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], 
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+// ⚠️ إيميل المالك
+const ADMIN_EMAIL = "ahmed.ragab.alproda@gmail.com"; 
 
-os.makedirs("static_audio", exist_ok=True)
-app.mount("/static", StaticFiles(directory="static_audio"), name="static")
+// ⚠️ رابط سيرفر Hugging Face السحابي
+const HUGGING_FACE_API = "https://alproda-audio-processor-api.hf.space";
 
-def get_drive_service():
-    creds_json = os.environ.get("GDRIVE_CREDENTIALS")
-    if not creds_json:
-        raise Exception("مفتاح Google Drive غير موجود في إعدادات السيرفر.")
-    creds_dict = json.loads(creds_json)
-    creds = service_account.Credentials.from_service_account_info(
-        creds_dict, scopes=['https://www.googleapis.com/auth/drive.file']
-    )
-    return build('drive', 'v3', credentials=creds)
+let app, auth, db, appId;
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  appId = "lecture-tracker-3d731";
+} catch (error) {
+  console.error('Firebase error:', error);
+}
 
-def time_str_to_ms(time_str):
-    h, m, s = map(int, time_str.split(':'))
-    return (h * 3600 + m * 60 + s) * 1000
+// حساب الرتب
+const getUserRank = (totalSeconds) => {
+  const hours = totalSeconds / 3600;
+  if (hours >= 100) return { name: 'أسطورة الدفعة', icon: '👑', color: 'text-yellow-500' };
+  if (hours >= 50) return { name: 'دحيح محترف', icon: '🤓', color: 'text-purple-500' };
+  if (hours >= 20) return { name: 'طالب مجتهد', icon: '📚', color: 'text-blue-500' };
+  if (hours >= 5) return { name: 'بطل صاعد', icon: '⭐', color: 'text-green-500' };
+  return { name: 'مبتدئ', icon: '🌱', color: 'text-slate-500' };
+};
 
-@app.get("/")
-def home():
-    return {"message": "السيرفر يعمل بنجاح! 🚀"}
+export default function App() {
+  // ==========================================
+  // States
+  // ==========================================
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [currentView, setCurrentView] = useState('tracker'); 
+  const [isAdmin, setIsAdmin] = useState(false);
 
-@app.post("/process-audio")
-async def process_audio(
-    inputType: str = Form(...),
-    split_mode: str = Form(...),
-    split_value: str = Form(...),
-    auto_upload: str = Form(...),
-    url: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None)
-):
-    temp_dir = tempfile.mkdtemp()
-    base_name = f"Lecture_{uuid.uuid4().hex[:4]}"
-    download_path = os.path.join(temp_dir, f"{base_name}.mp3")
-    
-    try:
-        video_title = base_name
-        if inputType == 'local':
-            if not file: raise Exception("لم يتم استلام الملف.")
-            video_title = file.filename.replace(".mp3", "").replace(".mp4", "")
-            with open(download_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-        elif inputType == 'url':
-            if not url: raise Exception("لم يتم توفير رابط.")
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': download_path,
-                'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3'}],
-                'quiet': True,
-                'source_address': '0.0.0.0', 
-                'geo_bypass': True
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                video_title = info.get('title', base_name)
+  // Tracker States
+  const [subjects, setSubjects] = useState([]);
+  const [stats, setStats] = useState([]);
+  const [activeSubjectId, setActiveSubjectId] = useState(null);
+  const [newSubjectName, setNewSubjectName] = useState('');
+  const [newLectureName, setNewLectureName] = useState('');
+  const [editingSubjectId, setEditingSubjectId] = useState(null);
+  const [editingSubjectName, setEditingSubjectName] = useState('');
+  const [editingLectureId, setEditingLectureId] = useState(null);
+  const [editingLectureName, setEditingLectureName] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const syncTimeoutRef = useRef(null);
 
-        audio = AudioSegment.from_file(download_path)
-        total_ms = len(audio)
-        chunks = []
+  // Leaderboard/Admin States
+  const [usersList, setUsersList] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isIOS, setIsIOS] = useState(false);
 
-        if split_mode == 'time':
-            chunk_length_ms = time_str_to_ms(split_value)
-            for i in range(0, total_ms, chunk_length_ms):
-                chunks.append(audio[i:i + chunk_length_ms])
-        else:
-            parts = int(split_value)
-            chunk_length_ms = total_ms // parts
-            for i in range(parts):
-                start = i * chunk_length_ms
-                end = start + chunk_length_ms if i < parts - 1 else total_ms
-                chunks.append(audio[start:end])
+  // Pomodoro States
+  const [timerMode, setTimerMode] = useState('work'); 
+  const [isActive, setIsActive] = useState(false);
+  const [pomodoroSettings, setPomodoroSettings] = useState({ work: 25, shortBreak: 5, longBreak: 15 });
+  const [timeLeft, setTimeLeft] = useState(pomodoroSettings.work * 60);
+  const [selectedSubjectForTimer, setSelectedSubjectForTimer] = useState('');
+  const [selectedLectureForTimer, setSelectedLectureForTimer] = useState('');
+  const [showTimerSettings, setShowTimerSettings] = useState(false);
 
-        results = []
-        drive_service = get_drive_service() if auto_upload == 'true' else None
+  // Automation States
+  const [inputType, setInputType] = useState('local'); // 'url', 'local', or 'drive'
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [localFile, setLocalFile] = useState(null);
+  const [splitMethod, setSplitMethod] = useState('time'); 
+  const [splitValueTime, setSplitValueTime] = useState('00:30:00');
+  const [splitValueParts, setSplitValueParts] = useState('4');
+  const [autoUploadDrive, setAutoUploadDrive] = useState(false);
+  const [isProcessingServer, setIsProcessingServer] = useState(false);
+  const [serverResult, setServerResult] = useState(null);
+  const [driveToken, setDriveToken] = useState(null);
+  const [driveFiles, setDriveFiles] = useState([]);
+  const [isLoadingDrive, setIsLoadingDrive] = useState(false);
 
-        for i, chunk in enumerate(chunks):
-            part_filename = f"Part_{i+1}_{base_name}.mp3"
-            chunk_path = os.path.join("static_audio", part_filename)
-            chunk.export(chunk_path, format="mp3")
+  // ==========================================
+  // Effects & Core Functions
+  // ==========================================
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('darkMode') === 'true';
+    return false;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('darkMode', darkMode);
+    if (darkMode) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+  }, [darkMode]);
+
+  useEffect(() => {
+    const handleInstall = (e) => { e.preventDefault(); setDeferredPrompt(e); };
+    window.addEventListener('beforeinstallprompt', handleInstall);
+    const ua = window.navigator.userAgent;
+    const ios = !!ua.match(/iPad/i) || !!ua.match(/iPhone/i);
+    const webkit = !!ua.match(/WebKit/i);
+    setIsIOS(ios && webkit && !ua.match(/CriOS/i));
+    return () => window.removeEventListener('beforeinstallprompt', handleInstall);
+  }, []);
+
+  const handleInstallClick = () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(() => setDeferredPrompt(null));
+    } else if (isIOS) {
+      alert('لتثبيت التطبيق على الآيفون 📱:\n1. اضغط على زر المشاركة (Share) في المتصفح أسفل الشاشة.\n2. اختر "إضافة للشاشة الرئيسية".');
+    } else {
+      alert('التطبيق مثبت بالفعل، أو المتصفح لا يدعم التثبيت المباشر.');
+    }
+  };
+
+  useEffect(() => {
+    if (!auth) return setAuthLoading(false);
+    const authTimeout = setTimeout(() => setAuthLoading(false), 5000);
+
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      clearTimeout(authTimeout);
+      setUser(currentUser);
+      setAuthLoading(false);
+
+      if (currentUser && db) {
+        const isOwner = currentUser.email === ADMIN_EMAIL;
+        const userRef = doc(db, 'artifacts', appId, 'usersList', currentUser.uid);
+        onSnapshot(userRef, (docSnap) => {
+          if (docSnap.exists()) setIsAdmin(isOwner || docSnap.data().role === 'admin');
+          else setIsAdmin(isOwner);
+        });
+
+        try {
+          await setDoc(userRef, {
+            name: currentUser.displayName || 'مستخدم',
+            email: currentUser.email || '',
+            photoURL: currentUser.photoURL || '',
+            lastLogin: new Date().toISOString()
+          }, { merge: true });
+        } catch (e) { console.error(e); }
+      } else {
+        setIsAdmin(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      provider.addScope('https://www.googleapis.com/auth/drive.file');
+      provider.addScope('https://www.googleapis.com/auth/drive.readonly');
+      
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential && credential.accessToken) setDriveToken(credential.accessToken);
+    } catch (error) { alert(`خطأ: ${error.message}`); }
+  };
+
+  const connectDrive = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      provider.addScope('https://www.googleapis.com/auth/drive.file');
+      provider.addScope('https://www.googleapis.com/auth/drive.readonly');
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential && credential.accessToken) {
+        setDriveToken(credential.accessToken);
+        alert("تم الربط مع جوجل درايف بنجاح!");
+      }
+    } catch (error) { alert("تعذر ربط حساب جوجل درايف."); }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setSubjects([]); setStats([]); setActiveSubjectId(null);
+      setCurrentView('tracker'); setIsActive(false); setIsAdmin(false); setDriveToken(null);
+    } catch (error) { console.error(error); }
+  };
+
+  // Firebase Sync
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user || !db) {
+      const localData = localStorage.getItem('tracker_data');
+      if (localData) {
+        const parsed = JSON.parse(localData);
+        setSubjects(parsed.subjects || []); setStats(parsed.stats || []);
+        setActiveSubjectId(parsed.subjects?.length > 0 ? parsed.subjects[0].id : null);
+      }
+      setIsLoaded(true);
+      return;
+    }
+
+    let isComponentMounted = true;
+    const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'trackerData', 'main');
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setSubjects(data.subjects || []); setStats(data.stats || []);
+        setActiveSubjectId(prev => (prev && data.subjects?.some(s => s.id === prev)) ? prev : (data.subjects?.length > 0 ? data.subjects[0].id : null));
+      }
+      setIsLoaded(true);
+    }, (error) => { console.error(error); setIsLoaded(true); });
+
+    return () => { isComponentMounted = false; unsubscribe(); };
+  }, [user, authLoading]);
+
+  // Leaderboard Sync
+  useEffect(() => {
+    if ((currentView === 'admin' && isAdmin) || currentView === 'leaderboard') {
+      if (!db) return;
+      setLoadingUsers(true);
+      const q = collection(db, 'artifacts', appId, 'usersList');
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const usersData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        if (currentView === 'leaderboard') usersData.sort((a, b) => (b.totalStudyTime || 0) - (a.totalStudyTime || 0));
+        else usersData.sort((a, b) => new Date(b.lastLogin) - new Date(a.lastLogin));
+        setUsersList(usersData);
+        setLoadingUsers(false);
+      });
+      return () => unsubscribe();
+    }
+  }, [currentView, isAdmin]);
+
+  const saveDataAndSync = (newSubjects, newStats) => {
+    setSubjects(newSubjects); 
+    setStats(newStats);
+    const payload = { subjects: newSubjects, stats: newStats };
+    if (user) localStorage.setItem(`tracker_data_${user.uid}`, JSON.stringify(payload));
+    else localStorage.setItem('tracker_data', JSON.stringify(payload));
+
+    if (!user || !db) return;
+    setIsSyncing(true);
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    syncTimeoutRef.current = setTimeout(async () => {
+      try {
+        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'trackerData', 'main');
+        await setDoc(docRef, payload, { merge: true });
+        const totalSecs = newStats.reduce((acc, curr) => acc + curr.durationSeconds, 0);
+        await setDoc(doc(db, 'artifacts', appId, 'usersList', user.uid), { totalStudyTime: totalSecs, completedPomodoros: newStats.length }, { merge: true });
+      } catch(err) { console.error(err); } finally { setIsSyncing(false); }
+    }, 800); 
+  };
+
+  const forceManualSync = () => {
+    setIsSyncing(true); setTimeout(() => setIsSyncing(false), 1000);
+    saveDataAndSync(subjects, stats);
+  };
+
+  // ==========================================
+  // Drive API Functions
+  // ==========================================
+  const fetchDriveList = async () => {
+    if (!driveToken) return connectDrive();
+    setIsLoadingDrive(true);
+    try {
+      const res = await fetch("https://www.googleapis.com/drive/v3/files?q=mimeType contains 'audio/' or mimeType contains 'video/'&fields=files(id,name,mimeType)&orderBy=modifiedTime desc&pageSize=20", {
+        headers: { Authorization: `Bearer ${driveToken}` }
+      });
+      if (!res.ok) throw new Error('فشل جلب الملفات');
+      const data = await res.json();
+      setDriveFiles(data.files || []);
+    } catch (e) { alert("فشل جلب الملفات من درايف. تأكد من إعطاء الصلاحيات."); }
+    setIsLoadingDrive(false);
+  };
+
+  const handleDriveFileSelect = async (file) => {
+    setIsLoadingDrive(true);
+    try {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+        headers: { Authorization: `Bearer ${driveToken}` }
+      });
+      const blob = await res.blob();
+      const f = new File([blob], file.name, { type: blob.type || 'audio/mpeg' });
+      f.isDrive = true;
+      setLocalFile(f);
+      alert(`تم استيراد ${file.name} بنجاح! جاهز للمعالجة.`);
+    } catch (e) { alert('فشل تحميل الملف من درايف.'); }
+    setIsLoadingDrive(false);
+  };
+
+  const uploadToDriveFrontend = async (blob, filename, token) => {
+    const metadata = { name: filename, mimeType: 'audio/mpeg' };
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    form.append('file', blob);
+
+    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form
+    });
+    return await res.json();
+  };
+
+  // ==========================================
+  // Pomodoro
+  // ==========================================
+  useEffect(() => { if (!isActive) setTimeLeft(pomodoroSettings[timerMode] * 60); }, [timerMode, pomodoroSettings]);
+  useEffect(() => {
+    let interval = null;
+    if (isActive && timeLeft > 0) interval = setInterval(() => setTimeLeft(t => t - 1), 1000);
+    else if (isActive && timeLeft === 0) handleTimerComplete();
+    return () => clearInterval(interval);
+  }, [isActive, timeLeft]);
+
+  const handleTimerComplete = () => {
+    setIsActive(false);
+    try { new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play(); } catch(e){}
+
+    if (timerMode === 'work') {
+      const newStat = { id: Date.now(), date: new Date().toISOString(), durationSeconds: pomodoroSettings.work * 60, subjectId: selectedSubjectForTimer || 'general', lectureId: selectedLectureForTimer || null };
+      const updatedStats = [...stats, newStat];
+      saveDataAndSync(subjects, updatedStats);
+      if (updatedStats.length % 4 === 0) setTimerMode('longBreak');
+      else setTimerMode('shortBreak');
+    } else setTimerMode('work');
+  };
+
+  const toggleTimer = () => {
+    if (timerMode === 'work' && !selectedSubjectForTimer && !isActive && subjects.length > 0) alert("يفضل اختيار المادة لتسجيلها بدقة في إحصائياتك!");
+    setIsActive(!isActive);
+  };
+  const resetTimer = () => { setIsActive(false); setTimeLeft(pomodoroSettings[timerMode] * 60); };
+
+  const formatTimerDisplay = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  // ==========================================
+  // Automation Process
+  // ==========================================
+  const handleServerProcess = async (e) => {
+    e.preventDefault();
+    if (inputType === 'url' && !sourceUrl.trim()) return alert('أدخل الرابط أولاً!');
+    if ((inputType === 'local' || inputType === 'drive') && !localFile) return alert('اختر ملفاً أولاً!');
+    if (!HUGGING_FACE_API.includes('hf.space')) return alert('يرجى وضع رابط سيرفر Hugging Face الصحيح.');
+    if (autoUploadDrive && !driveToken) return connectDrive();
+
+    setIsProcessingServer(true);
+    setServerResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('inputType', inputType === 'drive' ? 'local' : inputType);
+      formData.append('split_mode', splitMethod);
+      formData.append('split_value', splitMethod === 'time' ? splitValueTime : splitValueParts);
+      formData.append('auto_upload', 'false'); 
+      
+      if ((inputType === 'local' || inputType === 'drive') && localFile) {
+        formData.append('file', localFile);
+      } else {
+        formData.append('url', sourceUrl);
+      }
+
+      const response = await fetch(`${HUGGING_FACE_API}/process-audio`, {
+        method: 'POST',
+        body: formData 
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || 'فشل السيرفر في معالجة الطلب.');
+      }
+
+      const data = await response.json();
+
+      if (autoUploadDrive && driveToken && data.parts) {
+        const newParts = [];
+        for (let i = 0; i < data.parts.length; i++) {
+          const part = data.parts[i];
+          try {
+             const audioRes = await fetch(`${HUGGING_FACE_API}${part.preview_url}`);
+             const audioBlob = await audioRes.blob();
+             const uploadRes = await uploadToDriveFrontend(audioBlob, `${data.title} - الجزء ${i+1}.mp3`, driveToken);
+             newParts.push({ ...part, drive_link: uploadRes.webViewLink });
+          } catch(err) { console.error("Upload error", err); newParts.push(part); }
+        }
+        data.parts = newParts;
+      }
+      setServerResult(data);
+    } catch (error) {
+      console.error(error);
+      alert(`خطأ: ${error.message}`);
+    } finally {
+      setIsProcessingServer(false);
+    }
+  };
+
+  // ==========================================
+  // Tracker CRUD
+  // ==========================================
+  const addSubject = (e) => {
+    e.preventDefault();
+    if (!newSubjectName.trim()) return;
+    const newSub = { id: Date.now(), name: newSubjectName, lectures: [] };
+    saveDataAndSync([...subjects, newSub], stats);
+    setActiveSubjectId(newSub.id);
+    setNewSubjectName('');
+  };
+
+  const deleteSubject = (id) => {
+    if (window.confirm("حذف المادة؟")) {
+      const updatedSubjects = subjects.filter(sub => sub.id !== id);
+      saveDataAndSync(updatedSubjects, stats);
+      if (activeSubjectId === id) setActiveSubjectId(updatedSubjects.length > 0 ? updatedSubjects[0].id : null);
+    }
+  };
+
+  const saveEditSubject = (id) => {
+    if (!editingSubjectName.trim()) return setEditingSubjectId(null);
+    saveDataAndSync(subjects.map(s => s.id === id ? { ...s, name: editingSubjectName } : s), stats);
+    setEditingSubjectId(null);
+  };
+
+  const addLecture = (e) => {
+    e.preventDefault();
+    if (!newLectureName.trim() || !activeSubjectId) return;
+    const namesArray = newLectureName.split('\n').flatMap(n => n.split(',')).map(n => n.trim()).filter(n => n.length > 0);
+    const newLectures = namesArray.map((name, index) => ({
+      id: Date.now() + index, name: name, studied: false, listenedRecord: false, transcribed: false,
+      createdQuestions: false, solvedOwnQuestions: false, solvedNewQuestions: false, reviewCount: 0
+    }));
+    saveDataAndSync(subjects.map(sub => sub.id === activeSubjectId ? { ...sub, lectures: [...sub.lectures, ...newLectures] } : sub), stats);
+    setNewLectureName('');
+  };
+
+  const deleteLecture = (subId, lecId) => {
+    if (window.confirm("حذف المحاضرة؟")) {
+      saveDataAndSync(subjects.map(sub => sub.id === subId ? { ...sub, lectures: sub.lectures.filter(l => l.id !== lecId) } : sub), stats);
+    }
+  };
+
+  const saveEditLecture = (subId, lecId) => {
+    if (!editingLectureName.trim()) return setEditingLectureId(null);
+    saveDataAndSync(subjects.map(sub => sub.id === subId ? { ...sub, lectures: sub.lectures.map(l => l.id === lecId ? { ...l, name: editingLectureName } : l) } : sub), stats);
+    setEditingLectureId(null);
+  };
+
+  const toggleLectureTask = (subId, lecId, key) => {
+    saveDataAndSync(subjects.map(sub => sub.id === subId ? { ...sub, lectures: sub.lectures.map(l => l.id === lecId ? { ...l, [key]: !l[key] } : l) } : sub), stats);
+  };
+
+  const updateReviewCount = (subId, lecId, inc) => {
+    saveDataAndSync(subjects.map(sub => sub.id === subId ? { ...sub, lectures: sub.lectures.map(l => l.id === lecId ? { ...l, reviewCount: inc ? l.reviewCount + 1 : Math.max(0, l.reviewCount - 1) } : l) } : sub), stats);
+  };
+
+  const getProgress = (subject) => {
+    if (!subject || !subject.lectures || subject.lectures.length === 0) return 0;
+    const totalTasks = subject.lectures.length * 6;
+    let completed = 0;
+    subject.lectures.forEach(l => {
+      if (l.studied) completed++; if (l.listenedRecord) completed++; if (l.transcribed) completed++;
+      if (l.createdQuestions) completed++; if (l.solvedOwnQuestions) completed++; if (l.solvedNewQuestions) completed++;
+    });
+    return Math.round((completed / totalTasks) * 100);
+  };
+
+  const isFullyCompleted = (lecture) => lecture.studied && lecture.listenedRecord && lecture.transcribed && lecture.createdQuestions && lecture.solvedOwnQuestions && lecture.solvedNewQuestions;
+
+  const calculateStudyTime = (period) => {
+    const now = new Date();
+    let totalSeconds = 0;
+    stats.forEach(stat => {
+      const statDate = new Date(stat.date);
+      if (period === 'all') totalSeconds += stat.durationSeconds;
+      else if (period === 'day' && statDate.toDateString() === now.toDateString()) totalSeconds += stat.durationSeconds;
+      else if (period === 'week') {
+        const diffDays = Math.ceil(Math.abs(now - statDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays <= 7) totalSeconds += stat.durationSeconds;
+      } else if (period === 'month') {
+        if (statDate.getMonth() === now.getMonth() && statDate.getFullYear() === now.getFullYear()) totalSeconds += stat.durationSeconds;
+      }
+    });
+    return { hours: Math.floor(totalSeconds / 3600), minutes: Math.floor((totalSeconds % 3600) / 60), totalSeconds };
+  };
+
+  // تعريف المتغير النشط بشكل دائم لتفادي أخطاء ReferenceError
+  const activeSubject = subjects.find(s => s.id === activeSubjectId);
+  const myTotalStudy = calculateStudyTime('all');
+  const myRank = getUserRank(myTotalStudy.totalSeconds);
+
+  const taskDefinitions = [
+    { key: 'studied', label: 'ذاكرتها', bgChecked: 'peer-checked:bg-green-600 peer-checked:border-green-600' },
+    { key: 'listenedRecord', label: 'الريكورد', bgChecked: 'peer-checked:bg-blue-600 peer-checked:border-blue-600' },
+    { key: 'transcribed', label: 'التفريغ', bgChecked: 'peer-checked:bg-purple-600 peer-checked:border-purple-600' },
+    { key: 'createdQuestions', label: 'عملت أسئلة', bgChecked: 'peer-checked:bg-orange-600 peer-checked:border-orange-600' },
+    { key: 'solvedOwnQuestions', label: 'حليتها', bgChecked: 'peer-checked:bg-indigo-600 peer-checked:border-indigo-600' },
+    { key: 'solvedNewQuestions', label: 'أسئلة جديدة', bgChecked: 'peer-checked:bg-teal-600 peer-checked:border-teal-600' }
+  ];
+
+  // ==========================================
+  // Admin Functions
+  // ==========================================
+  const adminDeleteUser = async (userId, userName, userEmail) => {
+    if (userEmail === ADMIN_EMAIL) return alert("لا يمكنك حذف المالك!");
+    if (window.confirm(`حذف "${userName}"؟`)) {
+      try {
+        await deleteDoc(doc(db, 'artifacts', appId, 'usersList', userId));
+        await deleteDoc(doc(db, 'artifacts', appId, 'users', userId, 'trackerData', 'main'));
+      } catch (error) { alert('حدث خطأ.'); }
+    }
+  };
+
+  const toggleAdminRole = async (targetUserId, currentRole, targetEmail) => {
+    if (targetEmail === ADMIN_EMAIL) return alert("هذا المالك الأساسي!");
+    const newRole = currentRole === 'admin' ? 'user' : 'admin';
+    if (window.confirm(`تغيير الصلاحيات؟`)) {
+      try { await setDoc(doc(db, 'artifacts', appId, 'usersList', targetUserId), { role: newRole }, { merge: true }); } 
+      catch (error) { console.error(error); }
+    }
+  };
+
+  // ==========================================
+  // Render
+  // ==========================================
+
+  if (authLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin" size={48} /></div>;
+
+  if (!user) {
+    return (
+      <div className={`min-h-screen flex flex-col items-center justify-center p-4 ${darkMode ? 'bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`} dir="rtl">
+        <div className="absolute top-6 left-6 flex gap-2">
+          <button onClick={handleInstallClick} className={`p-3 rounded-full transition-colors ${darkMode ? 'bg-indigo-900/50 text-indigo-300 hover:bg-indigo-800' : 'bg-white text-indigo-600 shadow-md hover:bg-slate-100'}`}><Download size={24} /></button>
+          <button onClick={() => setDarkMode(!darkMode)} className={`p-3 rounded-full transition-colors ${darkMode ? 'bg-slate-800 text-yellow-300' : 'bg-white text-indigo-600 shadow-md'}`}>{darkMode ? <Sun size={24} /> : <Moon size={24} />}</button>
+        </div>
+        <div className={`w-full max-w-md p-8 rounded-3xl shadow-xl text-center border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}`}>
+          <BookOpen size={48} className="mx-auto mb-6 text-indigo-500" />
+          <h1 className="text-3xl font-bold mb-8">لمّ المنهج</h1>
+          <button onClick={handleGoogleLogin} className="w-full py-3 px-4 rounded-xl font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition">سجل دخولك بواسطة جوجل</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isLoaded && currentView === 'tracker') {
+    return (
+      <div className={`min-h-screen flex flex-col items-center justify-center ${darkMode ? 'bg-slate-900 text-indigo-400' : 'bg-slate-50 text-indigo-600'}`} dir="rtl">
+        <Loader2 className="animate-spin mb-4" size={48} />
+        <p className="font-bold">جاري تحميل بياناتك...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`min-h-screen font-sans pb-24 ${darkMode ? 'bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`} dir="rtl">
+      {/* Header */}
+      <header className={`${darkMode ? 'bg-slate-800 border-b border-slate-700' : 'bg-gradient-to-r from-indigo-700 to-indigo-500 shadow-md'} text-white p-3 sticky top-0 z-50`}>
+        <div className="container mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-center gap-3 w-full md:w-auto">
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentView('tracker')}>
+              <BookOpen size={24} className={darkMode ? 'text-indigo-400' : 'text-white'} />
+              <h1 className="text-xl font-bold">لمّ المنهج</h1>
+            </div>
             
-            drive_link = None
-            if auto_upload == 'true' and drive_service:
-                file_metadata = {'name': f"{video_title} - Part {i+1}.mp3"}
-                media = MediaFileUpload(chunk_path, mimetype='audio/mpeg')
-                drive_file = drive_service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
-                
-                # إعطاء صلاحية عامة للرابط لتفادي خطأ 403
-                drive_service.permissions().create(
-                    fileId=drive_file.get('id'),
-                    body={'type': 'anyone', 'role': 'reader'}
-                ).execute()
-                
-                drive_link = drive_file.get('webViewLink')
+            <div className="flex gap-2 bg-black/10 rounded-xl p-1 backdrop-blur-sm">
+              <button onClick={() => setCurrentView('tracker')} className={`p-2 rounded-lg transition ${currentView === 'tracker' ? 'bg-white text-indigo-600' : 'hover:bg-white/20'}`}><List size={18} /></button>
+              <button onClick={() => setCurrentView('pomodoro')} className={`p-2 rounded-lg transition ${currentView === 'pomodoro' ? 'bg-white text-indigo-600' : 'hover:bg-white/20'}`}><Timer size={18} /></button>
+              <button onClick={() => setCurrentView('leaderboard')} className={`p-2 rounded-lg transition ${currentView === 'leaderboard' ? 'bg-amber-400 text-slate-900' : 'hover:bg-white/20'}`}><Trophy size={18} /></button>
+              <button onClick={() => setCurrentView('automation')} className={`p-2 rounded-lg transition ${currentView === 'automation' ? 'bg-amber-400 text-slate-900' : 'hover:bg-white/20'}`}><Server size={18} /></button>
+              {isAdmin && <button onClick={() => setCurrentView('admin')} className={`p-2 rounded-lg transition ${currentView === 'admin' ? 'bg-red-500 text-white' : 'hover:bg-white/20'}`}><Shield size={18} /></button>}
+            </div>
+          </div>
 
-            results.append({
-                "name": f"الجزء {i+1}",
-                "preview_url": f"/static/{part_filename}",
-                "drive_link": drive_link
-            })
+          <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+            <button onClick={handleInstallClick} className={`hidden sm:flex p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 hover:bg-slate-600' : 'bg-indigo-800/50 hover:bg-indigo-800'}`}><Download size={18} /></button>
+            {currentView === 'tracker' && (
+              <div className="flex items-center gap-1">
+                <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm ${darkMode ? 'bg-slate-700' : 'bg-indigo-900/30'}`}>
+                  {isSyncing ? <><Loader2 size={14} className="animate-spin" /> <span>جاري الحفظ...</span></> : <><Cloud size={14} className="text-green-400" /> <span>تم الحفظ</span></>}
+                </div>
+                <button onClick={forceManualSync} className={`p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 text-green-400' : 'bg-indigo-800/50 text-green-300'}`}><RefreshCw size={18} className={isSyncing ? 'animate-spin' : ''} /></button>
+              </div>
+            )}
+            <button onClick={() => setDarkMode(!darkMode)} className={`p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 text-yellow-300' : 'bg-indigo-800/50 text-indigo-100'}`}>{darkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
+            <div className="h-6 w-px bg-white/20 mx-1"></div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 bg-black/20 rounded-full pr-1 pl-3 py-1">
+                <img src={user.photoURL || 'https://via.placeholder.com/150'} alt="profile" className="w-8 h-8 rounded-full object-cover border border-white/30" />
+                <div className="hidden lg:flex flex-col">
+                  <span className="text-sm font-medium truncate max-w-[120px] leading-tight">{user.displayName || 'مستخدم'}</span>
+                  <span className={`text-[10px] font-bold ${myRank.color}`}>{myRank.icon} {myRank.name}</span>
+                </div>
+              </div>
+              <button onClick={handleLogout} className="p-2 rounded-full bg-red-500/20 text-red-200 hover:bg-red-500 transition-colors"><LogOut size={18} /></button>
+            </div>
+          </div>
+        </div>
+      </header>
 
-        if os.path.exists(download_path): os.remove(download_path)
-        return {"status": "success", "title": video_title, "parts": results}
+      {/* Views */}
+      {currentView === 'automation' && (
+        <main className="container mx-auto p-4 mt-6 max-w-4xl animate-in fade-in slide-in-from-bottom-4">
+          <div className="mb-8">
+            <h2 className={`text-3xl font-bold flex items-center gap-3 ${darkMode ? 'text-amber-400' : 'text-amber-600'}`}><Server size={36} /> المعالج السحابي الذكي</h2>
+            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>اقطع المحاضرات الصوتية، استمع للمعاينة، وارفعها لجوجل درايف بضغطة زر!</p>
+          </div>
+          
+          <div className={`rounded-3xl p-6 md:p-8 border shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className="flex flex-col sm:flex-row mb-8 bg-slate-100 dark:bg-slate-700 p-1 rounded-xl gap-1">
+              <button onClick={() => { setInputType('local'); setServerResult(null); }} className={`flex-1 py-3 px-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all ${inputType === 'local' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`}><FileAudio size={18} /> الجهاز</button>
+              <button onClick={() => { setInputType('drive'); setServerResult(null); }} className={`flex-1 py-3 px-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all ${inputType === 'drive' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`}><HardDrive size={18} /> درايف</button>
+              <button onClick={() => { setInputType('url'); setServerResult(null); }} className={`flex-1 py-3 px-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all ${inputType === 'url' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`}><LinkIcon size={18} /> يوتيوب</button>
+            </div>
 
-    except Exception as e:
-        if os.path.exists(download_path): os.remove(download_path)
-        raise HTTPException(status_code=500, detail=str(e))
+            <form onSubmit={handleServerProcess} className="space-y-6">
+              {inputType === 'url' ? (
+                <div className="animate-in fade-in">
+                  <label className="block font-bold mb-2">رابط المحاضرة (يوتيوب أو رابط مباشر):</label>
+                  <div className="relative">
+                    <LinkIcon className="absolute right-4 top-3.5 text-slate-400" size={20} />
+                    <input type="url" required value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://youtube.com/..." className={`w-full rounded-xl pr-12 pl-4 py-3 border focus:ring-2 outline-none ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-300'}`} />
+                  </div>
+                  <div className={`mt-3 p-3 text-xs rounded-xl flex items-start gap-2 ${darkMode ? 'bg-blue-900/20 text-blue-300' : 'bg-blue-50 text-blue-800'}`}>
+                    <AlertCircle size={16} className="shrink-0" />
+                    <span>سيرفرات Hugging Face قد تقوم بحظر روابط يوتيوب أحياناً بسبب الضغط. يُفضل استخدام الرفع من الجهاز أو درايف كبديل.</span>
+                  </div>
+                </div>
+              ) : inputType === 'local' ? (
+                <div className="animate-in fade-in">
+                  <label className="block font-bold mb-2">اختر ملف صوت/فيديو من جهازك:</label>
+                  <div className={`border-2 border-dashed rounded-2xl p-8 text-center transition cursor-pointer ${darkMode ? 'border-slate-600 bg-slate-700/30 hover:bg-slate-700' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`} onClick={() => document.getElementById('local-upload').click()}>
+                    <input type="file" required accept="audio/*,video/*" onChange={(e) => setLocalFile(e.target.files[0])} className="hidden" id="local-upload" />
+                    <FileAudio size={48} className={`mx-auto mb-4 ${localFile && !localFile.isDrive ? 'text-green-500' : (darkMode ? 'text-slate-500' : 'text-slate-400')}`} />
+                    <span className={`font-medium text-lg ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{localFile && !localFile.isDrive ? localFile.name : 'اضغط هنا لاختيار ملف من جهازك'}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="animate-in fade-in">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block font-bold">ملفاتك في Google Drive:</label>
+                    {!driveToken && <button type="button" onClick={connectDrive} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">ربط درايف الآن</button>}
+                  </div>
+                  {!driveToken ? (
+                    <div className={`p-8 rounded-2xl text-center border ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
+                      <HardDrive size={40} className="mx-auto mb-4 text-slate-400" />
+                      <p className="mb-4 font-medium">يرجى ربط حساب Google Drive الخاص بك لاستيراد المحاضرات.</p>
+                      <button type="button" onClick={connectDrive} className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold">ربط الحساب</button>
+                    </div>
+                  ) : (
+                    <div className={`border rounded-2xl p-4 ${darkMode ? 'border-slate-600 bg-slate-700/30' : 'border-slate-300 bg-slate-50'}`}>
+                       <button type="button" onClick={fetchDriveList} className="w-full flex items-center justify-center gap-2 py-2 px-4 mb-4 bg-white dark:bg-slate-800 border dark:border-slate-600 rounded-lg font-bold shadow-sm">
+                         <RefreshCw size={16} className={isLoadingDrive ? 'animate-spin' : ''} /> تحديث قائمة الملفات
+                       </button>
+                       {isLoadingDrive ? (
+                         <div className="flex justify-center py-6"><Loader2 className="animate-spin text-indigo-500" /></div>
+                       ) : driveFiles.length > 0 ? (
+                         <ul className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                           {driveFiles.map(f => (
+                             <li key={f.id} onClick={() => handleDriveFileSelect(f)} className={`p-3 rounded-lg border cursor-pointer transition ${localFile?.id === f.id ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 hover:border-indigo-300'}`}>
+                               <span className="font-medium text-sm block truncate">{f.name}</span>
+                             </li>
+                           ))}
+                         </ul>
+                       ) : (
+                         <p className="text-center py-6 text-sm text-slate-500">لا توجد ملفات صوتية/فيديو حديثة.</p>
+                       )}
+                    </div>
+                  )}
+                  {localFile && localFile.isDrive && <p className="mt-3 text-sm text-green-600 font-bold text-center"><CheckCircle size={16} className="inline mr-1" /> تم الاستيراد بنجاح.</p>}
+                </div>
+              )}
 
-# ================= Telegram Bot =================
-API_ID = os.environ.get("API_ID")
-API_HASH = os.environ.get("API_HASH")
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+              <div className={`p-6 rounded-2xl border ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-indigo-50/50 border-indigo-100'}`}>
+                <h3 className="font-bold mb-4 flex items-center gap-2"><Timer size={18}/> نظام التقطيع</h3>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <label className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer ${splitMethod === 'time' ? 'border-indigo-500 bg-indigo-500/10' : (darkMode ? 'border-slate-600' : 'border-slate-200')}`}>
+                    <input type="radio" checked={splitMethod === 'time'} onChange={() => setSplitMethod('time')} className="w-5 h-5 accent-indigo-500" />
+                    <div><span className="font-bold block">بالوقت (HH:MM:SS)</span></div>
+                  </label>
+                  <label className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer ${splitMethod === 'parts' ? 'border-indigo-500 bg-indigo-500/10' : (darkMode ? 'border-slate-600' : 'border-slate-200')}`}>
+                    <input type="radio" checked={splitMethod === 'parts'} onChange={() => setSplitMethod('parts')} className="w-5 h-5 accent-indigo-500" />
+                    <div><span className="font-bold block">بعدد الأجزاء</span></div>
+                  </label>
+                </div>
+                <div className="mt-4">
+                  {splitMethod === 'time' ? (
+                    <input type="text" pattern="[0-9]{2}:[0-9]{2}:[0-9]{2}" value={splitValueTime} onChange={(e) => setSplitValueTime(e.target.value)} placeholder="00:30:00" className={`w-full md:w-1/2 text-center font-mono text-lg tracking-widest rounded-xl px-4 py-2 border outline-none ${darkMode ? 'bg-slate-800 border-slate-600 text-white' : 'bg-white border-slate-300'}`} />
+                  ) : (
+                    <input type="number" min="2" max="20" value={splitValueParts} onChange={(e) => setSplitValueParts(e.target.value)} className={`w-full md:w-1/2 rounded-xl px-4 py-2 border outline-none ${darkMode ? 'bg-slate-800 border-slate-600 text-white' : 'bg-white border-slate-300'}`} />
+                  )}
+                </div>
+              </div>
 
-bot = None
-if API_ID and API_HASH and BOT_TOKEN:
-    bot = Client("lecture_bot", api_id=int(API_ID), api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
+              <div className={`p-4 rounded-xl border flex items-center justify-between cursor-pointer ${autoUploadDrive ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-slate-200 dark:border-slate-700'}`} onClick={() => setAutoUploadDrive(!autoUploadDrive)}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${autoUploadDrive ? 'bg-green-100 text-green-600 dark:bg-green-800' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'}`}><UploadCloud size={20} /></div>
+                  <div>
+                    <h4 className="font-bold">الرفع التلقائي لـ Google Drive</h4>
+                    <p className="text-xs opacity-70">يتم الرفع مباشرة لحسابك لضمان السرعة وتخطي حظر السيرفر.</p>
+                  </div>
+                </div>
+                <div className={`w-12 h-6 rounded-full relative transition-colors ${autoUploadDrive ? 'bg-green-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${autoUploadDrive ? 'left-1' : 'right-1'}`}></div>
+                </div>
+              </div>
 
-    @bot.on_message(filters.audio | filters.voice | filters.document)
-    async def handle_audio_message(client, message):
-        msg = await message.reply_text("📥 جاري استلام الريكورد من تليجرام...")
-        temp_dir = tempfile.mkdtemp()
-        file_path = await message.download(file_name=temp_dir + "/")
-        await msg.edit_text("✂️ جاري التقطيع والرفع لـ Google Drive...")
-        
-        try:
-            audio = AudioSegment.from_file(file_path)
-            parts = 4 
-            chunk_length_ms = len(audio) // parts
-            drive_service = get_drive_service()
-            links = []
-            base_name = f"Telegram_{uuid.uuid4().hex[:4]}"
-            
-            for i in range(parts):
-                start = i * chunk_length_ms
-                end = start + chunk_length_ms if i < parts - 1 else len(audio)
-                chunk = audio[start:end]
-                chunk_path = os.path.join(temp_dir, f"Part_{i+1}_{base_name}.mp3")
-                chunk.export(chunk_path, format="mp3")
-                
-                file_metadata = {'name': f"{base_name} - Part {i+1}.mp3"}
-                media = MediaFileUpload(chunk_path, mimetype='audio/mpeg')
-                file = drive_service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
-                drive_service.permissions().create(fileId=file.get('id'), body={'type': 'anyone', 'role': 'reader'}).execute()
-                
-                links.append(file.get('webViewLink'))
-                os.remove(chunk_path)
-                
-            os.remove(file_path)
-            reply_text = "🎉 تم التقطيع والرفع بنجاح!\n\n"
-            for i, link in enumerate(links):
-                reply_text += f"🔗 الجزء {i+1}:\n{link}\n\n"
-            await msg.edit_text(reply_text)
-        except Exception as e:
-            await msg.edit_text(f"❌ خطأ:\n{str(e)}")
+              <button type="submit" disabled={isProcessingServer} className={`w-full py-4 rounded-xl font-black text-lg transition flex justify-center items-center gap-3 shadow-lg ${isProcessingServer ? 'bg-slate-500 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 text-white'}`}>
+                {isProcessingServer ? <><Loader2 className="animate-spin" size={24} /> جاري المعالجة (الرجاء عدم إغلاق الصفحة)...</> : <><UploadCloud size={24} /> بدء المعالجة {autoUploadDrive ? 'والرفع لدرايف' : ''}</>}
+              </button>
+            </form>
 
-@app.on_event("startup")
-async def startup_event():
-    if bot: await bot.start()
+            {serverResult && (
+              <div className={`mt-8 p-6 rounded-2xl border bg-slate-50 dark:bg-slate-800 dark:border-slate-700 animate-in zoom-in`}>
+                <h3 className="text-green-600 dark:text-green-400 font-black text-xl flex items-center gap-2 mb-2"><CheckCircle size={24}/> تمت العملية بنجاح!</h3>
+                <p className="font-bold mb-6">{serverResult.title}</p>
+                <div className="space-y-4">
+                  {serverResult.parts.map((part, idx) => (
+                    <div key={idx} className="p-4 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2"><PlayCircle size={18}/> {part.name}</span>
+                        <div className="flex gap-2">
+                          {part.drive_link && <a href={part.drive_link} target="_blank" rel="noreferrer" className="flex items-center gap-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-xs font-bold hover:bg-green-200"><UploadCloud size={14}/> درايف</a>}
+                          <a href={`${HUGGING_FACE_API}${part.preview_url}`} download className="flex items-center gap-1 px-3 py-1.5 bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold hover:bg-indigo-200"><DownloadCloud size={14}/> تحميل</a>
+                        </div>
+                      </div>
+                      <audio controls className="w-full h-10 rounded-full outline-none" src={`${HUGGING_FACE_API}${part.preview_url}`}></audio>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
+      )}
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    if bot: await bot.stop()
+      {currentView === 'pomodoro' && (
+        <main className="container mx-auto p-4 mt-6 max-w-5xl">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className={`text-3xl font-bold flex items-center gap-3 ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}><Timer className="text-indigo-500" size={32} /> مؤقت المذاكرة</h2>
+          </div>
+          <div className="grid lg:grid-cols-2 gap-6">
+            <div className={`rounded-3xl p-8 border shadow-sm flex flex-col items-center justify-center relative overflow-hidden ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <div className={`flex p-1 mb-8 rounded-xl border w-full max-w-sm z-10 ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-100 border-slate-200'}`}>
+                <button onClick={() => { setTimerMode('work'); setIsActive(false); }} className={`flex-1 py-2 px-2 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1 ${timerMode === 'work' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}><Brain size={16}/> تركيز</button>
+                <button onClick={() => { setTimerMode('shortBreak'); setIsActive(false); }} className={`flex-1 py-2 px-2 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1 ${timerMode === 'shortBreak' ? 'bg-green-500 text-white shadow-sm' : 'text-slate-500'}`}><Coffee size={16}/> بريك قصير</button>
+                <button onClick={() => { setTimerMode('longBreak'); setIsActive(false); }} className={`flex-1 py-2 px-2 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1 ${timerMode === 'longBreak' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-500'}`}><Coffee size={16}/> بريك طويل</button>
+              </div>
+              <div className="relative w-64 h-64 flex items-center justify-center mb-8 z-10">
+                <svg className="absolute top-0 left-0 w-full h-full transform -rotate-90">
+                  <circle cx="50%" cy="50%" r="48%" fill="none" strokeWidth="8" className={`${darkMode ? 'stroke-slate-700' : 'stroke-slate-100'}`} />
+                  <circle cx="50%" cy="50%" r="48%" fill="none" strokeWidth="8" strokeLinecap="round" className={`transition-all duration-1000 ease-linear ${timerMode === 'work' ? 'stroke-indigo-500' : timerMode === 'shortBreak' ? 'stroke-green-500' : 'stroke-blue-500'}`} strokeDasharray="150" strokeDashoffset="0" />
+                </svg>
+                <div className="text-center">
+                  <span className={`text-6xl font-black font-mono block ${timerMode === 'work' ? 'text-indigo-500' : timerMode === 'shortBreak' ? 'text-green-500' : 'text-blue-500'}`}>{formatTimerDisplay(timeLeft)}</span>
+                  <span className="text-sm font-medium uppercase tracking-widest mt-2 block opacity-70">{timerMode === 'work' ? 'وقت التركيز' : 'وقت الراحة'}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 z-10">
+                <button onClick={resetTimer} className={`w-14 h-14 rounded-full flex items-center justify-center transition border-2 ${darkMode ? 'border-slate-600 text-slate-400 hover:bg-slate-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}><RotateCcw size={24} /></button>
+                <button onClick={toggleTimer} className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition transform hover:scale-105 ${isActive ? 'bg-red-500 text-white' : (timerMode === 'work' ? 'bg-indigo-600 text-white' : timerMode === 'shortBreak' ? 'bg-green-500 text-white' : 'bg-blue-500 text-white')}`}>{isActive ? <Pause size={32} /> : <Play size={32} className="ml-2" />}</button>
+                <button onClick={() => setShowTimerSettings(!showTimerSettings)} className={`w-14 h-14 rounded-full flex items-center justify-center transition border-2 ${darkMode ? 'border-slate-600 text-slate-400' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}><Settings size={24} /></button>
+              </div>
+              {timerMode === 'work' && (
+                <div className="mt-8 w-full max-w-sm z-10 flex flex-col gap-3">
+                  <select value={selectedSubjectForTimer} onChange={(e) => { setSelectedSubjectForTimer(e.target.value); setSelectedLectureForTimer(''); }} className={`w-full rounded-xl px-4 py-3 outline-none focus:ring-2 border ${darkMode ? 'bg-slate-700 text-white border-slate-600' : 'bg-white border-slate-300'}`}>
+                    <option value="">-- مذاكرة عامة (بدون مادة) --</option>
+                    {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+            <div className="flex flex-col gap-6">
+              {showTimerSettings && (
+                <div className={`rounded-3xl p-6 border shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Settings size={20}/> إعدادات الأوقات</h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div><label className="block text-xs font-bold mb-1 text-indigo-500">التركيز</label><input type="number" min="1" max="120" value={pomodoroSettings.work} onChange={(e) => setPomodoroSettings({...pomodoroSettings, work: Number(e.target.value)})} className={`w-full rounded-xl px-3 py-2 text-center outline-none border ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`} /></div>
+                    <div><label className="block text-xs font-bold mb-1 text-green-500">بريك قصير</label><input type="number" min="1" max="30" value={pomodoroSettings.shortBreak} onChange={(e) => setPomodoroSettings({...pomodoroSettings, shortBreak: Number(e.target.value)})} className={`w-full rounded-xl px-3 py-2 text-center outline-none border ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`} /></div>
+                    <div><label className="block text-xs font-bold mb-1 text-blue-500">بريك طويل</label><input type="number" min="1" max="60" value={pomodoroSettings.longBreak} onChange={(e) => setPomodoroSettings({...pomodoroSettings, longBreak: Number(e.target.value)})} className={`w-full rounded-xl px-3 py-2 text-center outline-none border ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`} /></div>
+                  </div>
+                </div>
+              )}
+              <div className={`rounded-3xl p-6 border shadow-sm flex-1 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <h3 className="text-xl font-bold flex items-center gap-2 pb-3 border-b mb-6 dark:border-slate-700"><BarChart className="text-indigo-500" size={24}/> حصاد المذاكرة</h3>
+                <div className="grid grid-cols-1 gap-4 mb-6">
+                  <div className={`p-5 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-indigo-900/20 border-indigo-500/30' : 'bg-indigo-50 border-indigo-100'}`}>
+                    <div><span className="block text-sm font-bold mb-1 text-indigo-500">اليوم</span><span className="text-2xl font-black">{calculateStudyTime('day').hours} <span className="text-sm font-medium">س</span> و {calculateStudyTime('day').minutes} <span className="text-sm font-medium">د</span></span></div>
+                    <Clock className="text-indigo-500" size={32} />
+                  </div>
+                  <div className={`p-5 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-green-900/20 border-green-500/30' : 'bg-green-50 border-green-100'}`}>
+                    <div><span className="block text-sm font-bold mb-1 text-green-500">هذا الأسبوع</span><span className="text-2xl font-black">{calculateStudyTime('week').hours} <span className="text-sm font-medium">س</span> و {calculateStudyTime('week').minutes} <span className="text-sm font-medium">د</span></span></div>
+                    <Calendar className="text-green-500" size={32} />
+                  </div>
+                  <div className={`p-5 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-purple-900/20 border-purple-500/30' : 'bg-purple-50 border-purple-100'}`}>
+                    <div><span className="block text-sm font-bold mb-1 text-purple-500">هذا الشهر</span><span className="text-2xl font-black">{calculateStudyTime('month').hours} <span className="text-sm font-medium">س</span> و {calculateStudyTime('month').minutes} <span className="text-sm font-medium">د</span></span></div>
+                    <BarChart className="text-purple-500" size={32} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+      )}
+
+      {currentView === 'leaderboard' && (
+        <main className="container mx-auto p-4 mt-6 max-w-4xl">
+          <div className="mb-8">
+            <h2 className={`text-3xl font-bold flex items-center gap-3 ${darkMode ? 'text-yellow-400' : 'text-amber-600'}`}><Trophy size={36} /> لوحة الشرف لأبطال الدفعة</h2>
+            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>تنافس مع زملائك وكن من الأوائل!</p>
+          </div>
+          {loadingUsers ? <div className="flex justify-center py-20"><Loader2 className="animate-spin text-amber-500" size={48} /></div> : (
+            <div className="space-y-4">
+              <div className="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-8 mb-12 mt-8">
+                {usersList[1] && (
+                  <div className="flex flex-col items-center order-2 md:order-1 transform md:translate-y-8">
+                    <div className="relative"><img src={usersList[1].photoURL || 'https://via.placeholder.com/150'} alt="2nd" className="w-20 h-20 rounded-full border-4 border-slate-300 object-cover shadow-lg" /><div className="absolute -bottom-3 -right-3 bg-slate-200 w-8 h-8 rounded-full flex items-center justify-center font-bold border-2 border-white shadow-sm text-slate-800">2</div></div>
+                    <span className="font-bold mt-4">{(usersList[1].name || 'مستخدم').split(' ')[0]}</span>
+                    <span className="text-xs font-bold bg-slate-100 text-slate-700 px-2 py-1 rounded-full mt-1">🥈 {Math.floor((usersList[1].totalStudyTime || 0) / 3600)} ساعة</span>
+                  </div>
+                )}
+                {usersList[0] && (
+                  <div className="flex flex-col items-center order-1 md:order-2 z-10">
+                    <div className="relative"><Trophy size={32} className="absolute -top-10 left-1/2 transform -translate-x-1/2 text-yellow-400 animate-bounce" /><img src={usersList[0].photoURL || 'https://via.placeholder.com/150'} alt="1st" className="w-28 h-28 rounded-full border-4 border-yellow-400 object-cover shadow-xl shadow-yellow-500/20" /><div className="absolute -bottom-4 -right-2 bg-yellow-400 text-yellow-900 w-10 h-10 rounded-full flex items-center justify-center font-black border-2 border-white shadow-md text-lg">1</div></div>
+                    <span className={`font-black text-xl mt-5 ${darkMode ? 'text-yellow-400' : 'text-amber-600'}`}>{(usersList[0].name || 'مستخدم').split(' ')[0]}</span>
+                    <span className="text-sm font-bold bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full mt-1">🥇 {Math.floor((usersList[0].totalStudyTime || 0) / 3600)} ساعة</span>
+                  </div>
+                )}
+                {usersList[2] && (
+                  <div className="flex flex-col items-center order-3 transform md:translate-y-12">
+                    <div className="relative"><img src={usersList[2].photoURL || 'https://via.placeholder.com/150'} alt="3rd" className="w-16 h-16 rounded-full border-4 border-amber-700/50 object-cover shadow-md" /><div className="absolute -bottom-2 -right-2 bg-amber-700/50 text-white w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs border-2 border-white">3</div></div>
+                    <span className="font-bold mt-3 text-sm">{(usersList[2].name || 'مستخدم').split(' ')[0]}</span>
+                    <span className="text-[10px] text-amber-900 font-bold bg-amber-100 px-2 py-0.5 rounded-full mt-1">🥉 {Math.floor((usersList[2].totalStudyTime || 0) / 3600)} س</span>
+                  </div>
+                )}
+              </div>
+              <div className={`rounded-3xl border shadow-sm overflow-hidden ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                {usersList.slice(3).map((u, idx) => {
+                  const rnk = getUserRank(u.totalStudyTime || 0);
+                  return (
+                    <div key={u.id} className={`flex items-center justify-between p-4 border-b ${darkMode ? 'border-slate-700' : 'border-slate-100'} ${u.id === user?.uid ? (darkMode ? 'bg-indigo-900/30' : 'bg-indigo-50') : ''}`}>
+                      <div className="flex items-center gap-4">
+                        <span className="font-bold w-6 text-center opacity-50">{idx + 4}</span>
+                        <img src={u.photoURL || 'https://via.placeholder.com/150'} alt="user" className="w-10 h-10 rounded-full object-cover" />
+                        <div>
+                          <h4 className="font-bold flex items-center gap-2">{u.name} {u.id === user?.uid && <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">أنت</span>}</h4>
+                          <span className={`text-xs font-bold ${rnk.color}`}>{rnk.icon} {rnk.name}</span>
+                        </div>
+                      </div>
+                      <div className="text-left">
+                        <span className="block font-black text-lg">{Math.floor((u.totalStudyTime || 0) / 3600)}</span>
+                        <span className="text-[10px] font-bold opacity-50">ساعة</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </main>
+      )}
+
+      {currentView === 'admin' && isAdmin && (
+        <main className="container mx-auto p-4 mt-6">
+          <div className={`rounded-3xl p-6 md:p-8 border shadow-sm mb-6 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className="flex items-center gap-3 mb-8 border-b pb-4 dark:border-slate-700">
+              <div className="p-3 bg-red-100 text-red-600 rounded-xl"><Shield size={32} /></div>
+              <div><h2 className="text-2xl font-bold">لوحة تحكم المدير</h2></div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+              <div className={`p-6 rounded-2xl border flex flex-col items-center text-center ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-indigo-50 border-indigo-100'}`}>
+                <Users size={32} className="text-indigo-500 mb-2" />
+                <span className="text-3xl font-bold text-indigo-500">{usersList.length}</span>
+                <span className="text-sm font-medium">الطلاب المسجلين</span>
+              </div>
+            </div>
+            <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><Users size={20}/> إدارة الطلاب</h3>
+            {loadingUsers ? <Loader2 className="animate-spin text-indigo-500 mx-auto" size={40} /> : (
+              <div className={`rounded-xl border overflow-hidden ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse">
+                    <thead>
+                      <tr className={`text-sm ${darkMode ? 'bg-slate-700/50' : 'bg-slate-50'}`}>
+                        <th className="p-4">الطالب</th><th className="p-4">الدور</th><th className="p-4 text-center">إجراءات</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {usersList.map((u) => {
+                        const isSuper = u.email === ADMIN_EMAIL;
+                        const isAdm = isSuper || u.role === 'admin';
+                        return (
+                        <tr key={u.id} className={`border-b ${darkMode ? 'border-slate-700' : 'border-slate-100'}`}>
+                          <td className="p-4 flex items-center gap-3"><img src={u.photoURL || 'https://via.placeholder.com/150'} alt="Avatar" className="w-8 h-8 rounded-full" /><span className="font-bold">{u.name}</span></td>
+                          <td className="p-4">{isSuper ? 'مالك' : isAdm ? 'أدمن' : 'مستخدم'}</td>
+                          <td className="p-4 flex justify-center gap-2">
+                            <button onClick={() => toggleAdminRole(u.id, u.role, u.email)} className="p-2 rounded-lg bg-indigo-100 text-indigo-600"><UserCheck size={18} /></button>
+                            <button onClick={() => adminDeleteUser(u.id, u.name, u.email)} className="p-2 rounded-lg bg-red-100 text-red-600"><Trash2 size={18} /></button>
+                          </td>
+                        </tr>
+                      )})}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
+      )}
+
+      {currentView === 'tracker' && (
+        <main className="container mx-auto p-4 flex flex-col lg:flex-row gap-6 mt-6">
+          {/* Sidebar */}
+          <aside className={`w-full lg:w-1/4 rounded-2xl p-4 border h-fit sticky top-24 ${darkMode ? 'bg-slate-800 border-slate-700 shadow-none' : 'bg-white border-slate-200 shadow-sm'}`}>
+            <h2 className={`text-lg font-bold mb-4 flex items-center gap-2 border-b pb-3 ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}><List size={20} className="text-indigo-500"/> المواد الدراسية</h2>
+            <form onSubmit={addSubject} className="mb-4 flex gap-2">
+              <input type="text" placeholder="اسم المادة..." className={`flex-1 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 border ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-slate-300'}`} value={newSubjectName} onChange={(e) => setNewSubjectName(e.target.value)} />
+              <button type="submit" className="bg-indigo-600 text-white p-2 rounded-xl hover:bg-indigo-700 transition"><Plus size={20} /></button>
+            </form>
+            <ul className="space-y-2 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
+              {subjects.map(subject => (
+                <li key={subject.id} className="group relative">
+                  {editingSubjectId === subject.id ? (
+                    <div className={`flex items-center gap-2 p-2 rounded-xl border ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-indigo-50 border-indigo-200'}`}>
+                      <input type="text" className={`flex-1 rounded px-2 py-1 text-sm outline-none ${darkMode ? 'bg-slate-600 text-white' : 'bg-white'}`} value={editingSubjectName} onChange={(e) => setEditingSubjectName(e.target.value)} autoFocus />
+                      <button onClick={() => saveEditSubject(subject.id)} className="text-green-500"><Save size={18} /></button>
+                      <button onClick={() => setEditingSubjectId(null)} className="text-slate-400"><X size={18} /></button>
+                    </div>
+                  ) : (
+                    <div className={`flex items-center justify-between transition-all rounded-xl overflow-hidden border ${activeSubjectId === subject.id ? (darkMode ? 'border-indigo-500/50 bg-indigo-900/30' : 'border-indigo-200 bg-indigo-50/50') : (darkMode ? 'border-transparent hover:border-slate-600 hover:bg-slate-700' : 'border-transparent hover:border-slate-200 hover:bg-slate-50')}`}>
+                      <button onClick={() => setActiveSubjectId(subject.id)} className="flex-1 text-right px-3 py-3 relative">
+                        <div className={`absolute top-0 right-0 h-full transition-all duration-500 -z-10 ${darkMode ? 'bg-indigo-900/40' : 'bg-indigo-100/60'}`} style={{ width: `${getProgress(subject)}%` }}></div>
+                        <div className="flex justify-between items-center z-10 relative">
+                          <span className={`font-medium ${activeSubjectId === subject.id ? (darkMode ? 'text-indigo-300 font-bold' : 'text-indigo-800 font-bold') : ''}`}>{subject.name}</span>
+                          <span className={`text-[10px] font-bold px-2 py-1 rounded-lg border backdrop-blur-sm ${darkMode ? 'text-indigo-300 bg-slate-800/80 border-slate-600' : 'text-indigo-700 bg-white/80 border-indigo-100'}`}>{getProgress(subject)}%</span>
+                        </div>
+                      </button>
+                      <div className="flex items-center gap-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => { setEditingSubjectId(subject.id); setEditingSubjectName(subject.name); }} className="p-1.5 text-slate-400 hover:text-indigo-500"><Pencil size={14} /></button>
+                        <button onClick={() => deleteSubject(subject.id)} className="p-1.5 text-slate-400 hover:text-red-500"><Trash2 size={14} /></button>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              ))}
+              {subjects.length === 0 && <p className="text-sm text-center py-6 rounded-xl border border-dashed opacity-50">لا توجد مواد مضافة.</p>}
+            </ul>
+          </aside>
+
+          {/* Main Content */}
+          <section className="w-full lg:w-3/4">
+            {activeSubject ? (
+              <div className="space-y-6">
+                {/* Header */}
+                <div className={`rounded-2xl p-5 md:p-6 border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                    <div className="w-full md:w-1/2">
+                      <h2 className="text-2xl md:text-3xl font-bold mb-3">{activeSubject.name}</h2>
+                      <div className={`w-full rounded-full h-3 mb-2 overflow-hidden border ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-100 border-slate-200'}`}>
+                        <div className="bg-gradient-to-l from-indigo-500 to-purple-500 h-full rounded-full transition-all duration-1000" style={{ width: `${getProgress(activeSubject)}%` }}></div>
+                      </div>
+                    </div>
+                    <div className="flex flex-col sm:flex-row w-full md:w-auto gap-2 shrink-0">
+                      <form onSubmit={addLecture} className="flex flex-1 sm:flex-none gap-2">
+                        <textarea rows={1} placeholder="الصق المحاضرات..." className={`flex-1 sm:w-48 lg:w-64 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 resize-none overflow-hidden ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-slate-300'}`} value={newLectureName} onChange={(e) => setNewLectureName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addLecture(e); } }} />
+                        <button type="submit" className="bg-green-600 text-white px-5 py-2 rounded-xl hover:bg-green-700"><Plus size={18} /></button>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Lectures List */}
+                {activeSubject.lectures.length > 0 ? (
+                  <>
+                    {/* Mobile View */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:hidden">
+                      {activeSubject.lectures.map(lecture => {
+                        const isDone = isFullyCompleted(lecture);
+                        return (
+                          <div key={lecture.id} className={`border rounded-2xl p-4 transition-all ${isDone ? (darkMode ? 'border-green-500/50 bg-green-900/20' : 'border-green-300 bg-green-50/30') : (darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200')}`}>
+                            <div className={`flex justify-between items-start mb-4 border-b pb-3 ${darkMode ? 'border-slate-700' : 'border-slate-100'}`}>
+                              {editingLectureId === lecture.id ? (
+                                <div className="flex items-center gap-2 w-full">
+                                  <input type="text" className={`flex-1 rounded-lg px-2 py-1 text-sm outline-none border ${darkMode ? 'bg-slate-700 text-white border-slate-500' : 'bg-white border-indigo-300'}`} value={editingLectureName} onChange={(e) => setEditingLectureName(e.target.value)} autoFocus />
+                                  <button onClick={() => saveEditLecture(activeSubject.id, lecture.id)} className="text-green-500 p-1"><Save size={18} /></button>
+                                  <button onClick={() => setEditingLectureId(null)} className="text-slate-400 p-1"><X size={18} /></button>
+                                </div>
+                              ) : (
+                                <>
+                                  <h3 className={`font-bold text-lg pr-1 ${isDone ? 'line-through opacity-50' : ''}`}>{lecture.name}</h3>
+                                  <div className={`flex gap-1 rounded-lg p-1 border shrink-0 ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
+                                    <button onClick={() => { setEditingLectureId(lecture.id); setEditingLectureName(lecture.name); }} className="p-1.5 text-slate-400 hover:text-indigo-500"><Pencil size={14} /></button>
+                                    <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className="p-1.5 text-slate-400 hover:text-red-500"><Trash2 size={14} /></button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 gap-y-3 gap-x-2 mb-4">
+                              {taskDefinitions.map((task) => (
+                                <label key={task.key} className={`flex items-center gap-2 p-2 rounded-lg border border-transparent cursor-pointer transition ${darkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
+                                  <div className="relative flex items-center justify-center">
+                                    <input type="checkbox" className="peer sr-only" checked={lecture[task.key]} onChange={() => toggleLectureTask(activeSubject.id, lecture.id, task.key)} />
+                                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${darkMode ? 'bg-slate-700 border-slate-500' : 'bg-white border-slate-300'} ${task.bgChecked}`}>
+                                      {lecture[task.key] && <Check size={14} className="text-white" strokeWidth={3} />}
+                                    </div>
+                                  </div>
+                                  <span className={`text-sm font-medium ${lecture[task.key] ? 'line-through opacity-50' : ''}`}>{task.label}</span>
+                                </label>
+                              ))}
+                            </div>
+                            <div className={`flex items-center justify-between p-3 rounded-xl border ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-slate-50 border-slate-100'}`}>
+                              <span className="text-sm font-semibold flex items-center gap-2"><Clock size={16}/> المراجعات</span>
+                              <div className="flex items-center gap-3">
+                                <button onClick={() => updateReviewCount(activeSubject.id, lecture.id, false)} className={`w-7 h-7 rounded-lg border flex items-center justify-center ${darkMode ? 'bg-slate-600 border-slate-500 text-slate-300' : 'bg-white shadow-sm text-slate-600'}`}>-</button>
+                                <span className={`w-4 text-center font-bold ${darkMode ? 'text-indigo-400' : 'text-indigo-700'}`}>{lecture.reviewCount}</span>
+                                <button onClick={() => updateReviewCount(activeSubject.id, lecture.id, true)} className={`w-7 h-7 rounded-lg flex items-center justify-center ${darkMode ? 'bg-indigo-900/50 text-indigo-300' : 'bg-indigo-100 text-indigo-700'}`}>+</button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Desktop View */}
+                    <div className={`hidden lg:block rounded-2xl border overflow-hidden ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-right border-collapse min-w-[850px]">
+                          <thead>
+                            <tr className={`text-sm border-b ${darkMode ? 'bg-slate-700/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                              <th className="p-4 font-semibold w-1/4">المحاضرة</th>
+                              {taskDefinitions.map(task => <th key={task.key} className="p-3 font-semibold text-center">{task.label}</th>)}
+                              <th className="p-3 font-semibold text-center w-24">مراجعات</th>
+                              <th className="p-3 font-semibold text-center w-24">إجراء</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {activeSubject.lectures.map((lecture) => {
+                              const isDone = isFullyCompleted(lecture);
+                              return (
+                                <tr key={lecture.id} className={`border-b transition duration-300 ${isDone ? (darkMode ? 'bg-green-900/20 border-slate-700' : 'bg-green-50/40 border-slate-100') : (darkMode ? 'hover:bg-slate-700/50 border-slate-700' : 'hover:bg-slate-50 border-slate-100')}`}>
+                                  <td className="p-4 font-medium">
+                                    {editingLectureId === lecture.id ? (
+                                      <div className="flex items-center gap-2">
+                                        <input type="text" className={`flex-1 rounded px-2 py-1 text-sm outline-none border ${darkMode ? 'bg-slate-700 text-white border-slate-500' : 'bg-white border-indigo-300'}`} value={editingLectureName} onChange={(e) => setEditingLectureName(e.target.value)} autoFocus />
+                                        <button onClick={() => saveEditLecture(activeSubject.id, lecture.id)} className="text-green-500"><Save size={16} /></button>
+                                        <button onClick={() => setEditingLectureId(null)} className="text-slate-400"><X size={16} /></button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-2">
+                                        {isDone && <CheckCircle size={16} className="text-green-500 shrink-0" />}
+                                        <span className={`truncate max-w-[180px] ${isDone ? 'line-through opacity-50' : ''}`}>{lecture.name}</span>
+                                      </div>
+                                    )}
+                                  </td>
+                                  {taskDefinitions.map((task) => (
+                                    <td key={task.key} className="p-3 text-center">
+                                      <label className="inline-flex items-center justify-center cursor-pointer w-full h-full">
+                                        <input type="checkbox" className="peer sr-only" checked={lecture[task.key]} onChange={() => toggleLectureTask(activeSubject.id, lecture.id, task.key)} />
+                                        <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-all ${darkMode ? 'bg-slate-700 border-slate-500' : 'bg-white border-slate-300'} ${task.bgChecked}`}>
+                                          {lecture[task.key] && <Check size={16} className="text-white" strokeWidth={3} />}
+                                        </div>
+                                      </label>
+                                    </td>
+                                  ))}
+                                  <td className="p-3">
+                                    <div className={`flex items-center justify-center gap-2 rounded-full p-1 ${darkMode ? 'bg-slate-700' : 'bg-slate-100'}`}>
+                                      <button onClick={() => updateReviewCount(activeSubject.id, lecture.id, true)} className={`w-6 h-6 rounded-full flex items-center justify-center text-lg leading-none ${darkMode ? 'bg-slate-600 text-indigo-400' : 'bg-white shadow-sm text-indigo-600'}`}>+</button>
+                                      <span className={`w-4 text-center font-bold text-sm ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{lecture.reviewCount}</span>
+                                      <button onClick={() => updateReviewCount(activeSubject.id, lecture.id, false)} className={`w-6 h-6 rounded-full flex items-center justify-center text-lg leading-none ${darkMode ? 'bg-slate-600 text-slate-300' : 'bg-white shadow-sm text-slate-500'}`}>-</button>
+                                    </div>
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="flex items-center justify-center gap-2">
+                                      <button onClick={() => { setEditingLectureId(lecture.id); setEditingLectureName(lecture.name); }} className={`p-1.5 rounded-lg ${darkMode ? 'text-slate-400 hover:text-indigo-400' : 'text-slate-400 hover:text-indigo-600'}`}><Pencil size={16} /></button>
+                                      <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className={`p-1.5 rounded-lg ${darkMode ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-600'}`}><Trash2 size={16} /></button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className={`text-center py-16 rounded-2xl border-2 border-dashed ${darkMode ? 'bg-slate-800 border-slate-600' : 'bg-white border-slate-200'}`}>
+                    <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${darkMode ? 'bg-indigo-900/30' : 'bg-indigo-50'}`}><BookOpen size={32} className={darkMode ? 'text-indigo-400' : 'text-indigo-300'} /></div>
+                    <h3 className="text-lg font-bold mb-1">لا توجد محاضرات هنا</h3>
+                    <p className="text-sm mb-6 max-w-sm mx-auto opacity-70">ابدأ بإضافة المحاضرات المتراكمة لتتمكن من تنظيم مهامك ومتابعة تقدمك.</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className={`h-full flex items-center justify-center rounded-2xl p-12 border min-h-[50vh] ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div className="text-center">
+                  <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 ${darkMode ? 'bg-indigo-900/30' : 'bg-indigo-50'}`}><List size={40} className={darkMode ? 'text-indigo-400' : 'text-indigo-400'} /></div>
+                  <h2 className="text-2xl font-bold mb-2">أهلاً بك يا بطل! 👋</h2>
+                  <p className="max-w-md mx-auto opacity-70">قم باختيار مادة من القائمة الجانبية أو أضف مادة دراسية جديدة للبدء في تنظيم وقتك بنجاح.</p>
+                </div>
+              </div>
+            )}
+          </section>
+        </main>
+      )}
+    </div>
+  );
+}
