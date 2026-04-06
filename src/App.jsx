@@ -3,7 +3,7 @@ import {
   Plus, Trash, BookOpen, Check, Cloud, 
   Loader2, Pencil, X, Save, CheckCircle, Clock, List, Moon, Sun,
   LogOut, Shield, Users, Calendar, Timer, Play, Pause, RotateCcw, 
-  Settings, BarChart, Coffee, Brain, Trophy, Download,
+  Settings, BarChart, Coffee, Brain, Trophy, Download, Target,
   RefreshCw, UserCheck, UserX
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
@@ -257,7 +257,13 @@ export default function App() {
     try { new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play(); } catch(e){}
 
     if (timerMode === 'work') {
-      const newStat = { id: Date.now(), date: new Date().toISOString(), durationSeconds: pomodoroSettings.work * 60, subjectId: selectedSubjectForTimer || 'general', lectureId: selectedLectureForTimer || null };
+      const newStat = { 
+        id: Date.now(), 
+        date: new Date().toISOString(), 
+        durationSeconds: pomodoroSettings.work * 60, 
+        subjectId: selectedSubjectForTimer || 'general', 
+        lectureId: selectedLectureForTimer || null 
+      };
       const updatedStats = [...stats, newStat];
       saveDataAndSync(subjects, updatedStats);
       if (updatedStats.length % 4 === 0) setTimerMode('longBreak');
@@ -266,7 +272,9 @@ export default function App() {
   };
 
   const toggleTimer = () => {
-    if (timerMode === 'work' && !selectedSubjectForTimer && !isActive && subjects.length > 0) alert("يفضل اختيار المادة لتسجيلها بدقة في إحصائياتك!");
+    if (timerMode === 'work' && !selectedSubjectForTimer && !isActive && subjects.length > 0) {
+      alert("يفضل اختيار المادة لتسجيلها بدقة في إحصائياتك!");
+    }
     setIsActive(!isActive);
   };
   const resetTimer = () => { setIsActive(false); setTimeLeft(pomodoroSettings[timerMode] * 60); };
@@ -484,61 +492,90 @@ export default function App() {
             <h2 className={`text-3xl font-bold flex items-center gap-3 ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}><Timer className="text-indigo-500" size={32} /> مؤقت المذاكرة</h2>
           </div>
           <div className="grid lg:grid-cols-2 gap-6">
+            
+            {/* بطاقة المؤقت */}
             <div className={`rounded-3xl p-8 border shadow-sm flex flex-col items-center justify-center relative overflow-hidden ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
               <div className={`flex p-1 mb-8 rounded-xl border w-full max-w-sm z-10 ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-100 border-slate-200'}`}>
                 <button onClick={() => { setTimerMode('work'); setIsActive(false); }} className={`flex-1 py-2 px-2 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1 ${timerMode === 'work' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}><Brain size={16}/> تركيز</button>
                 <button onClick={() => { setTimerMode('shortBreak'); setIsActive(false); }} className={`flex-1 py-2 px-2 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1 ${timerMode === 'shortBreak' ? 'bg-green-500 text-white shadow-sm' : 'text-slate-500'}`}><Coffee size={16}/> بريك قصير</button>
                 <button onClick={() => { setTimerMode('longBreak'); setIsActive(false); }} className={`flex-1 py-2 px-2 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1 ${timerMode === 'longBreak' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-500'}`}><Coffee size={16}/> بريك طويل</button>
               </div>
-              <div className="relative w-64 h-64 flex items-center justify-center mb-8 z-10">
+              
+              <div className="relative w-64 h-64 flex items-center justify-center mb-8 z-10 drop-shadow-2xl">
                 <svg className="absolute top-0 left-0 w-full h-full transform -rotate-90">
                   <circle cx="50%" cy="50%" r="48%" fill="none" strokeWidth="8" className={`${darkMode ? 'stroke-slate-700' : 'stroke-slate-100'}`} />
                   <circle cx="50%" cy="50%" r="48%" fill="none" strokeWidth="8" strokeLinecap="round" className={`transition-all duration-1000 ease-linear ${timerMode === 'work' ? 'stroke-indigo-500' : timerMode === 'shortBreak' ? 'stroke-green-500' : 'stroke-blue-500'}`} strokeDasharray="150" strokeDashoffset="0" />
                 </svg>
                 <div className="text-center">
-                  <span className={`text-6xl font-black font-mono block ${timerMode === 'work' ? 'text-indigo-500' : timerMode === 'shortBreak' ? 'text-green-500' : 'text-blue-500'}`}>{formatTimerDisplay(timeLeft)}</span>
-                  <span className="text-sm font-medium uppercase tracking-widest mt-2 block opacity-70">{timerMode === 'work' ? 'وقت التركيز' : 'وقت الراحة'}</span>
+                  <span className={`text-6xl font-black font-mono block drop-shadow-md ${timerMode === 'work' ? 'text-indigo-500' : timerMode === 'shortBreak' ? 'text-green-500' : 'text-blue-500'}`}>{formatTimerDisplay(timeLeft)}</span>
+                  <span className="text-sm font-bold uppercase tracking-widest mt-2 block opacity-70">{timerMode === 'work' ? 'وقت التركيز' : 'وقت الراحة'}</span>
                 </div>
               </div>
+
               <div className="flex items-center gap-4 z-10">
                 <button onClick={resetTimer} className={`w-14 h-14 rounded-full flex items-center justify-center transition border-2 ${darkMode ? 'border-slate-600 text-slate-400 hover:bg-slate-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}><RotateCcw size={24} /></button>
-                <button onClick={toggleTimer} className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition transform hover:scale-105 ${isActive ? 'bg-red-500 text-white' : (timerMode === 'work' ? 'bg-indigo-600 text-white' : timerMode === 'shortBreak' ? 'bg-green-500 text-white' : 'bg-blue-500 text-white')}`}>{isActive ? <Pause size={32} /> : <Play size={32} className="ml-2" />}</button>
+                <button onClick={toggleTimer} className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition transform hover:scale-105 ${isActive ? 'bg-red-500 text-white' : (timerMode === 'work' ? 'bg-indigo-600 text-white shadow-indigo-500/50' : timerMode === 'shortBreak' ? 'bg-green-500 text-white shadow-green-500/50' : 'bg-blue-500 text-white shadow-blue-500/50')}`}>{isActive ? <Pause size={32} /> : <Play size={32} className="ml-2" />}</button>
                 <button onClick={() => setShowTimerSettings(!showTimerSettings)} className={`w-14 h-14 rounded-full flex items-center justify-center transition border-2 ${darkMode ? 'border-slate-600 text-slate-400' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}><Settings size={24} /></button>
               </div>
+
               {timerMode === 'work' && (
-                <div className="mt-8 w-full max-w-sm z-10 flex flex-col gap-3">
-                  <select value={selectedSubjectForTimer} onChange={(e) => { setSelectedSubjectForTimer(e.target.value); setSelectedLectureForTimer(''); }} className={`w-full rounded-xl px-4 py-3 outline-none focus:ring-2 border ${darkMode ? 'bg-slate-700 text-white border-slate-600' : 'bg-white border-slate-300'}`}>
-                    <option value="">-- مذاكرة عامة (بدون مادة) --</option>
+                <div className="mt-8 w-full max-w-sm z-10 flex flex-col gap-3 animate-in fade-in">
+                  <select value={selectedSubjectForTimer} onChange={(e) => { setSelectedSubjectForTimer(e.target.value); setSelectedLectureForTimer(''); }} className={`w-full rounded-xl px-4 py-3 outline-none focus:ring-2 border font-bold ${darkMode ? 'bg-slate-700 text-white border-slate-600 focus:ring-indigo-500' : 'bg-white border-slate-300 focus:ring-indigo-200'}`}>
+                    <option value="">-- مذاكرة عامة (بدون تحديد مادة) --</option>
                     {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
+                  
+                  {/* اختيار المحاضرة (تم إرجاعها) */}
+                  {selectedSubjectForTimer && subjects.find(s => s.id.toString() === selectedSubjectForTimer.toString())?.lectures.length > 0 && (
+                    <div className="animate-in fade-in slide-in-from-top-2">
+                      <select value={selectedLectureForTimer} onChange={(e) => setSelectedLectureForTimer(e.target.value)} className={`w-full rounded-xl px-4 py-3 text-sm font-bold outline-none border ${darkMode ? 'bg-indigo-900/30 text-indigo-300 border-indigo-700' : 'bg-indigo-50 text-indigo-800 border-indigo-200'}`}>
+                        <option value="">-- حدد المحاضرة التي تذاكرها (اختياري) --</option>
+                        {subjects.find(s => s.id.toString() === selectedSubjectForTimer.toString()).lectures.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                      </select>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
+
             <div className="flex flex-col gap-6">
               {showTimerSettings && (
                 <div className={`rounded-3xl p-6 border shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Settings size={20}/> إعدادات الأوقات</h3>
+                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Settings size={20}/> إعدادات الأوقات (بالدقائق)</h3>
                   <div className="grid grid-cols-3 gap-4">
-                    <div><label className="block text-xs font-bold mb-1 text-indigo-500">التركيز</label><input type="number" min="1" max="120" value={pomodoroSettings.work} onChange={(e) => setPomodoroSettings({...pomodoroSettings, work: Number(e.target.value)})} className={`w-full rounded-xl px-3 py-2 text-center outline-none border ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`} /></div>
-                    <div><label className="block text-xs font-bold mb-1 text-green-500">بريك قصير</label><input type="number" min="1" max="30" value={pomodoroSettings.shortBreak} onChange={(e) => setPomodoroSettings({...pomodoroSettings, shortBreak: Number(e.target.value)})} className={`w-full rounded-xl px-3 py-2 text-center outline-none border ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`} /></div>
-                    <div><label className="block text-xs font-bold mb-1 text-blue-500">بريك طويل</label><input type="number" min="1" max="60" value={pomodoroSettings.longBreak} onChange={(e) => setPomodoroSettings({...pomodoroSettings, longBreak: Number(e.target.value)})} className={`w-full rounded-xl px-3 py-2 text-center outline-none border ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`} /></div>
+                    <div><label className="block text-xs font-bold mb-1 text-indigo-500">التركيز</label><input type="number" min="1" max="120" value={pomodoroSettings.work} onChange={(e) => setPomodoroSettings({...pomodoroSettings, work: Number(e.target.value)})} className={`w-full rounded-xl px-3 py-2 text-center font-bold outline-none border ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`} /></div>
+                    <div><label className="block text-xs font-bold mb-1 text-green-500">بريك قصير</label><input type="number" min="1" max="30" value={pomodoroSettings.shortBreak} onChange={(e) => setPomodoroSettings({...pomodoroSettings, shortBreak: Number(e.target.value)})} className={`w-full rounded-xl px-3 py-2 text-center font-bold outline-none border ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`} /></div>
+                    <div><label className="block text-xs font-bold mb-1 text-blue-500">بريك طويل</label><input type="number" min="1" max="60" value={pomodoroSettings.longBreak} onChange={(e) => setPomodoroSettings({...pomodoroSettings, longBreak: Number(e.target.value)})} className={`w-full rounded-xl px-3 py-2 text-center font-bold outline-none border ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`} /></div>
                   </div>
                 </div>
               )}
+              
               <div className={`rounded-3xl p-6 border shadow-sm flex-1 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                <h3 className="text-xl font-bold flex items-center gap-2 pb-3 border-b mb-6 dark:border-slate-700"><BarChart className="text-indigo-500" size={24}/> حصاد المذاكرة</h3>
-                <div className="grid grid-cols-1 gap-4 mb-6">
-                  <div className={`p-5 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-indigo-900/20 border-indigo-500/30' : 'bg-indigo-50 border-indigo-100'}`}>
-                    <div><span className="block text-sm font-bold mb-1 text-indigo-500">اليوم</span><span className="text-2xl font-black">{calculateStudyTime('day').hours} <span className="text-sm font-medium">س</span> و {calculateStudyTime('day').minutes} <span className="text-sm font-medium">د</span></span></div>
-                    <Clock className="text-indigo-500" size={32} />
+                <h3 className="text-xl font-bold flex items-center gap-2 pb-3 border-b mb-6 dark:border-slate-700"><BarChart className="text-indigo-500" size={24}/> إحصائيات المذاكرة والتركيز</h3>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                  {/* إحصائية عدد الجلسات (تم إرجاعها) */}
+                  <div className={`col-span-1 sm:col-span-2 p-5 rounded-2xl border flex items-center justify-between shadow-sm ${darkMode ? 'bg-orange-900/20 border-orange-500/30' : 'bg-orange-50 border-orange-100'}`}>
+                    <div>
+                      <span className="block text-sm font-bold mb-1 text-orange-500">إجمالي عدد الجلسات (البومودورو)</span>
+                      <span className="text-2xl font-black">{stats.length} <span className="text-sm font-bold opacity-70">جلسة مكتملة</span></span>
+                    </div>
+                    <Target className="text-orange-500 drop-shadow-md" size={36} />
                   </div>
-                  <div className={`p-5 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-green-900/20 border-green-500/30' : 'bg-green-50 border-green-100'}`}>
+
+                  <div className={`p-5 rounded-2xl border flex items-center justify-between shadow-sm ${darkMode ? 'bg-indigo-900/20 border-indigo-500/30' : 'bg-indigo-50 border-indigo-100'}`}>
+                    <div><span className="block text-sm font-bold mb-1 text-indigo-500">مذاكرة اليوم</span><span className="text-2xl font-black">{calculateStudyTime('day').hours} <span className="text-sm font-medium">س</span> و {calculateStudyTime('day').minutes} <span className="text-sm font-medium">د</span></span></div>
+                    <Clock className="text-indigo-500 drop-shadow-md" size={32} />
+                  </div>
+                  
+                  <div className={`p-5 rounded-2xl border flex items-center justify-between shadow-sm ${darkMode ? 'bg-green-900/20 border-green-500/30' : 'bg-green-50 border-green-100'}`}>
                     <div><span className="block text-sm font-bold mb-1 text-green-500">هذا الأسبوع</span><span className="text-2xl font-black">{calculateStudyTime('week').hours} <span className="text-sm font-medium">س</span> و {calculateStudyTime('week').minutes} <span className="text-sm font-medium">د</span></span></div>
-                    <Calendar className="text-green-500" size={32} />
+                    <Calendar className="text-green-500 drop-shadow-md" size={32} />
                   </div>
-                  <div className={`p-5 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-purple-900/20 border-purple-500/30' : 'bg-purple-50 border-purple-100'}`}>
-                    <div><span className="block text-sm font-bold mb-1 text-purple-500">هذا الشهر</span><span className="text-2xl font-black">{calculateStudyTime('month').hours} <span className="text-sm font-medium">س</span> و {calculateStudyTime('month').minutes} <span className="text-sm font-medium">د</span></span></div>
-                    <BarChart className="text-purple-500" size={32} />
+                  
+                  <div className={`col-span-1 sm:col-span-2 p-5 rounded-2xl border flex items-center justify-between shadow-sm ${darkMode ? 'bg-purple-900/20 border-purple-500/30' : 'bg-purple-50 border-purple-100'}`}>
+                    <div><span className="block text-sm font-bold mb-1 text-purple-500">حصاد هذا الشهر</span><span className="text-2xl font-black">{calculateStudyTime('month').hours} <span className="text-sm font-medium">ساعة</span> و {calculateStudyTime('month').minutes} <span className="text-sm font-medium">دقيقة</span></span></div>
+                    <BarChart className="text-purple-500 drop-shadow-md" size={32} />
                   </div>
                 </div>
               </div>
@@ -551,7 +588,7 @@ export default function App() {
         <main className="container mx-auto p-4 mt-6 max-w-4xl">
           <div className="mb-8">
             <h2 className={`text-3xl font-bold flex items-center gap-3 ${darkMode ? 'text-yellow-400' : 'text-amber-600'}`}><Trophy size={36} /> لوحة الشرف لأبطال الدفعة</h2>
-            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>تنافس مع زملائك وكن من الأوائل!</p>
+            <p className={`mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>تنافس مع زملائك وكن من الأوائل! الترتيب مبني على إجمالي ساعات المذاكرة.</p>
           </div>
           {loadingUsers ? <div className="flex justify-center py-20"><Loader2 className="animate-spin text-amber-500" size={48} /></div> : (
             <div className="space-y-4">
