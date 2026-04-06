@@ -638,7 +638,7 @@ export default function App() {
                           <td className="p-4">{isSuper ? 'مالك' : isAdm ? 'أدمن' : 'مستخدم'}</td>
                           <td className="p-4 flex justify-center gap-2">
                             <button onClick={() => toggleAdminRole(u.id, u.role, u.email)} className="p-2 rounded-lg bg-indigo-100 text-indigo-600"><UserCheck size={18} /></button>
-                            <button onClick={() => adminDeleteUser(u.id, u.name, u.email)} className="p-2 rounded-lg bg-red-100 text-red-600"><Trash2 size={18} /></button>
+                            <button onClick={() => adminDeleteUser(u.id, u.name, u.email)} className="p-2 rounded-lg bg-red-100 text-red-600"><Trash size={18} /></button>
                           </td>
                         </tr>
                       )})}
@@ -680,7 +680,7 @@ export default function App() {
                       </button>
                       <div className="flex items-center gap-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button onClick={() => { setEditingSubjectId(subject.id); setEditingSubjectName(subject.name); }} className="p-1.5 text-slate-400 hover:text-indigo-500"><Pencil size={14} /></button>
-                        <button onClick={() => deleteSubject(subject.id)} className="p-1.5 text-slate-400 hover:text-red-500"><Trash2 size={14} /></button>
+                        <button onClick={() => deleteSubject(subject.id)} className="p-1.5 text-slate-400 hover:text-red-500"><Trash size={14} /></button>
                       </div>
                     </div>
                   )}
@@ -733,7 +733,7 @@ export default function App() {
                                   <h3 className={`font-bold text-lg pr-1 ${isDone ? 'line-through opacity-50' : ''}`}>{lecture.name}</h3>
                                   <div className={`flex gap-1 rounded-lg p-1 border shrink-0 ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
                                     <button onClick={() => { setEditingLectureId(lecture.id); setEditingLectureName(lecture.name); }} className="p-1.5 text-slate-400 hover:text-indigo-500"><Pencil size={14} /></button>
-                                    <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className="p-1.5 text-slate-400 hover:text-red-500"><Trash2 size={14} /></button>
+                                    <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className="p-1.5 text-slate-400 hover:text-red-500"><Trash size={14} /></button>
                                   </div>
                                 </>
                               )}
@@ -815,7 +815,7 @@ export default function App() {
                                   <td className="p-3">
                                     <div className="flex items-center justify-center gap-2">
                                       <button onClick={() => { setEditingLectureId(lecture.id); setEditingLectureName(lecture.name); }} className={`p-1.5 rounded-lg ${darkMode ? 'text-slate-400 hover:text-indigo-400' : 'text-slate-400 hover:text-indigo-600'}`}><Pencil size={16} /></button>
-                                      <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className={`p-1.5 rounded-lg ${darkMode ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-600'}`}><Trash2 size={16} /></button>
+                                      <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className={`p-1.5 rounded-lg ${darkMode ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-600'}`}><Trash size={16} /></button>
                                     </div>
                                   </td>
                                 </tr>
