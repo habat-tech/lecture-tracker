@@ -90,8 +90,8 @@ export default function App() {
   const [showTimerSettings, setShowTimerSettings] = useState(false);
 
   // Custom UI States (Toast & Modal)
-  const [toast, setToast] = useState(null); // { message, type: 'success' | 'error' | 'info' }
-  const [confirmDialog, setConfirmDialog] = useState(null); // { message, onConfirm }
+  const [toast, setToast] = useState(null); 
+  const [confirmDialog, setConfirmDialog] = useState(null); 
 
   // ==========================================
   // Helpers
@@ -119,8 +119,20 @@ export default function App() {
     else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
+  // استيراد الخط وتطبيقه
   useEffect(() => {
-    const handleInstall = (e) => { e.preventDefault(); setDeferredPrompt(e); };
+    const link = document.createElement('link');
+    link.href = 'https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap';
+    link.rel = 'stylesheet';
+    document.head.appendChild(link);
+    document.body.style.fontFamily = "'Tajawal', sans-serif";
+  }, []);
+
+  useEffect(() => {
+    const handleInstall = (e) => { 
+      e.preventDefault(); 
+      setDeferredPrompt(e); 
+    };
     window.addEventListener('beforeinstallprompt', handleInstall);
     const ua = window.navigator.userAgent;
     const ios = !!ua.match(/iPad/i) || !!ua.match(/iPhone/i);
@@ -469,10 +481,9 @@ export default function App() {
   if (!user) {
     return (
       <div className={`min-h-screen flex flex-col items-center justify-center p-4 transition-colors duration-500 ${darkMode ? 'bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`} dir="rtl">
-        {/* Custom Toast & Modal renders (handled globally below) */}
         <div className="absolute top-6 left-6 flex gap-2">
-          <button onClick={handleInstallClick} title="تثبيت التطبيق" className={`p-3 rounded-full transition-all duration-300 ${darkMode ? 'bg-indigo-900/50 text-indigo-300 hover:bg-indigo-800' : 'bg-white text-indigo-600 shadow-md hover:shadow-lg'}`}><Download size={24} /></button>
-          <button onClick={() => setDarkMode(!darkMode)} title="تغيير المظهر" className={`p-3 rounded-full transition-all duration-300 ${darkMode ? 'bg-slate-800 text-yellow-300 hover:bg-slate-700' : 'bg-white text-indigo-600 shadow-md hover:shadow-lg'}`}>{darkMode ? <Sun size={24} /> : <Moon size={24} />}</button>
+          <button onClick={handleInstallClick} title="تثبيت التطبيق" className={`flex p-3 rounded-full transition-all duration-300 ${darkMode ? 'bg-indigo-900/50 text-indigo-300 hover:bg-indigo-800' : 'bg-white text-indigo-600 shadow-md hover:shadow-lg'}`}><Download size={24} /></button>
+          <button onClick={() => setDarkMode(!darkMode)} title="تغيير المظهر" className={`flex p-3 rounded-full transition-all duration-300 ${darkMode ? 'bg-slate-800 text-yellow-300 hover:bg-slate-700' : 'bg-white text-indigo-600 shadow-md hover:shadow-lg'}`}>{darkMode ? <Sun size={24} /> : <Moon size={24} />}</button>
         </div>
         <div className={`w-full max-w-md p-8 rounded-3xl shadow-2xl text-center border transition-all duration-500 transform hover:scale-[1.02] ${darkMode ? 'bg-slate-800 border-slate-700 shadow-indigo-900/20' : 'bg-white border-slate-100 shadow-indigo-100'}`}>
           <div className="w-24 h-24 mx-auto mb-6 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center">
@@ -503,7 +514,7 @@ export default function App() {
   const strokeDashoffset = circumference - (timeLeft / (pomodoroSettings[timerMode] * 60)) * circumference;
 
   return (
-    <div className={`min-h-screen font-sans pb-24 transition-colors duration-300 ${darkMode ? 'bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`} dir="rtl">
+    <div className={`min-h-screen pb-24 transition-colors duration-300 ${darkMode ? 'bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`} dir="rtl">
       
       {/* Toast Notification System */}
       {toast && (
@@ -536,15 +547,15 @@ export default function App() {
       {/* Header */}
       <header className={`${darkMode ? 'bg-slate-800 border-b border-slate-700' : 'bg-gradient-to-r from-indigo-700 to-purple-600 shadow-lg'} text-white p-3 sticky top-0 z-40 transition-colors duration-300`}>
         <div className="container mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center justify-center gap-3 w-full md:w-auto">
+          <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3 w-full md:w-auto">
             <div className="flex items-center gap-2 cursor-pointer transition transform hover:scale-105" onClick={() => setCurrentView('tracker')}>
               <div className="bg-white/20 p-1.5 rounded-lg backdrop-blur-sm">
-                <BookOpen size={24} className={darkMode ? 'text-indigo-300' : 'text-white'} />
+                <BookOpen size={20} className={darkMode ? 'text-indigo-300' : 'text-white'} />
               </div>
-              <h1 className="text-xl font-black tracking-wide">لمّ المنهج</h1>
+              <h1 className="text-lg md:text-xl font-black tracking-wide">لمّ المنهج</h1>
             </div>
             
-            <div className="flex gap-1 bg-black/20 rounded-xl p-1 backdrop-blur-md">
+            <div className="flex gap-1 bg-black/20 rounded-xl p-1 backdrop-blur-md overflow-x-auto">
               <button onClick={() => setCurrentView('tracker')} title="المتعقب" className={`p-2 rounded-lg transition-all duration-300 ${currentView === 'tracker' ? 'bg-white text-indigo-600 shadow-md transform scale-105' : 'hover:bg-white/20 text-indigo-100'}`}><List size={18} /></button>
               <button onClick={() => setCurrentView('pomodoro')} title="المؤقت والإحصائيات" className={`p-2 rounded-lg transition-all duration-300 ${currentView === 'pomodoro' ? 'bg-white text-indigo-600 shadow-md transform scale-105' : 'hover:bg-white/20 text-indigo-100'}`}><Timer size={18} /></button>
               <button onClick={() => setCurrentView('leaderboard')} title="لوحة الشرف" className={`p-2 rounded-lg transition-all duration-300 ${currentView === 'leaderboard' ? 'bg-amber-400 text-amber-900 shadow-md transform scale-105' : 'hover:bg-white/20 text-indigo-100'}`}><Trophy size={18} /></button>
@@ -552,8 +563,8 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-            <button onClick={handleInstallClick} title="تثبيت التطبيق" className={`hidden sm:flex p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 hover:bg-slate-600' : 'bg-indigo-800/50 hover:bg-indigo-800'}`}><Download size={18} /></button>
+          <div className="flex items-center gap-2 w-full md:w-auto justify-center md:justify-end mt-2 md:mt-0">
+            <button onClick={handleInstallClick} title="تثبيت التطبيق" className={`flex p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 hover:bg-slate-600' : 'bg-indigo-800/50 hover:bg-indigo-800'}`}><Download size={18} /></button>
             {currentView === 'tracker' && (
               <div className="flex items-center gap-1">
                 <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-sm transition-all ${darkMode ? 'bg-slate-700/80' : 'bg-indigo-900/40'}`}>
@@ -563,7 +574,7 @@ export default function App() {
               </div>
             )}
             <button onClick={() => setDarkMode(!darkMode)} title="تغيير المظهر" className={`p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 text-yellow-300 hover:bg-slate-600' : 'bg-indigo-800/50 text-yellow-300 hover:bg-indigo-800'}`}>{darkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
-            <div className="h-6 w-px bg-white/30 mx-1"></div>
+            <div className="h-6 w-px bg-white/30 mx-1 hidden md:block"></div>
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 bg-black/20 rounded-full pr-1 pl-3 py-1 hover:bg-black/30 transition cursor-default">
                 <img src={user.photoURL || 'https://via.placeholder.com/150'} alt="profile" className="w-8 h-8 rounded-full object-cover border border-white/50 shadow-sm" />
@@ -583,18 +594,18 @@ export default function App() {
         <main className="container mx-auto p-4 mt-6 max-w-5xl animate-in fade-in slide-in-from-bottom-4">
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h2 className={`text-3xl font-black flex items-center gap-3 ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}><Timer className="text-indigo-500" size={36} /> مؤقت التركيز (بومودورو)</h2>
+              <h2 className={`text-2xl md:text-3xl font-black flex items-center gap-3 ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}><Timer className="text-indigo-500" size={32} /> مؤقت التركيز</h2>
               <p className={`mt-2 font-medium ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>حدد مادتك، ابدأ المؤقت، وتتبع إنجازك بدقة.</p>
             </div>
           </div>
           <div className="grid lg:grid-cols-2 gap-8">
             
             {/* بطاقة المؤقت */}
-            <div className={`rounded-3xl p-8 border shadow-xl flex flex-col items-center justify-center relative overflow-hidden transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 shadow-indigo-900/10' : 'bg-white border-slate-100'}`}>
-              <div className={`flex p-1.5 mb-8 rounded-2xl border w-full max-w-sm z-10 shadow-inner ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
-                <button onClick={() => { setTimerMode('work'); setIsActive(false); }} className={`flex-1 py-2.5 px-2 rounded-xl font-bold text-sm transition-all duration-300 flex items-center justify-center gap-2 ${timerMode === 'work' ? 'bg-indigo-600 text-white shadow-md transform scale-[1.02]' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'}`}><Brain size={18}/> تركيز</button>
-                <button onClick={() => { setTimerMode('shortBreak'); setIsActive(false); }} className={`flex-1 py-2.5 px-2 rounded-xl font-bold text-sm transition-all duration-300 flex items-center justify-center gap-2 ${timerMode === 'shortBreak' ? 'bg-green-500 text-white shadow-md transform scale-[1.02]' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'}`}><Coffee size={18}/> بريك</button>
-                <button onClick={() => { setTimerMode('longBreak'); setIsActive(false); }} className={`flex-1 py-2.5 px-2 rounded-xl font-bold text-sm transition-all duration-300 flex items-center justify-center gap-2 ${timerMode === 'longBreak' ? 'bg-blue-500 text-white shadow-md transform scale-[1.02]' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'}`}><Coffee size={18}/> بريك طويل</button>
+            <div className={`rounded-3xl p-6 md:p-8 border shadow-xl flex flex-col items-center justify-center relative overflow-hidden transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 shadow-indigo-900/10' : 'bg-white border-slate-100'}`}>
+              <div className={`flex p-1 mb-8 rounded-2xl border w-full max-w-sm z-10 shadow-inner ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+                <button onClick={() => { setTimerMode('work'); setIsActive(false); }} className={`flex-1 py-2 px-1 rounded-xl font-bold text-xs md:text-sm transition-all duration-300 flex items-center justify-center gap-1 md:gap-2 ${timerMode === 'work' ? 'bg-indigo-600 text-white shadow-md transform scale-[1.02]' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'}`}><Brain size={16}/> تركيز</button>
+                <button onClick={() => { setTimerMode('shortBreak'); setIsActive(false); }} className={`flex-1 py-2 px-1 rounded-xl font-bold text-xs md:text-sm transition-all duration-300 flex items-center justify-center gap-1 md:gap-2 ${timerMode === 'shortBreak' ? 'bg-green-500 text-white shadow-md transform scale-[1.02]' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'}`}><Coffee size={16}/> بريك</button>
+                <button onClick={() => { setTimerMode('longBreak'); setIsActive(false); }} className={`flex-1 py-2 px-1 rounded-xl font-bold text-xs md:text-sm transition-all duration-300 flex items-center justify-center gap-1 md:gap-2 ${timerMode === 'longBreak' ? 'bg-blue-500 text-white shadow-md transform scale-[1.02]' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'}`}><Coffee size={16}/> بريك طويل</button>
               </div>
               
               <div className="relative w-64 h-64 md:w-80 md:h-80 flex items-center justify-center mb-10 z-10 drop-shadow-2xl">
@@ -608,20 +619,20 @@ export default function App() {
                   />
                 </svg>
                 <div className="text-center">
-                  <span className={`text-6xl md:text-7xl font-black font-mono block drop-shadow-md tracking-tighter ${timerMode === 'work' ? 'text-indigo-500' : timerMode === 'shortBreak' ? 'text-green-500' : 'text-blue-500'}`}>{formatTimerDisplay(timeLeft)}</span>
-                  <span className="text-sm font-bold uppercase tracking-widest mt-2 block opacity-60">{timerMode === 'work' ? 'وقت التركيز' : timerMode === 'shortBreak' ? 'استراحة قصيرة' : 'استراحة طويلة'}</span>
+                  <span className={`text-5xl md:text-7xl font-black font-mono block drop-shadow-md tracking-tighter ${timerMode === 'work' ? 'text-indigo-500' : timerMode === 'shortBreak' ? 'text-green-500' : 'text-blue-500'}`}>{formatTimerDisplay(timeLeft)}</span>
+                  <span className="text-xs md:text-sm font-bold uppercase tracking-widest mt-2 block opacity-60">{timerMode === 'work' ? 'وقت التركيز' : timerMode === 'shortBreak' ? 'استراحة قصيرة' : 'استراحة طويلة'}</span>
                 </div>
               </div>
 
               <div className="flex items-center gap-6 z-10">
                 <button onClick={resetTimer} title="إعادة تعيين" className={`w-14 h-14 rounded-full flex items-center justify-center transition-all border-2 shadow-sm ${darkMode ? 'border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-white' : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-indigo-600'}`}><RotateCcw size={24} /></button>
-                <button onClick={toggleTimer} title="تشغيل / إيقاف" className={`w-24 h-24 rounded-full flex items-center justify-center shadow-2xl transition-all transform hover:scale-110 active:scale-95 text-white ${isActive ? 'bg-red-500 hover:bg-red-600' : (timerMode === 'work' ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/50' : timerMode === 'shortBreak' ? 'bg-green-500 hover:bg-green-600 shadow-green-500/50' : 'bg-blue-500 hover:bg-blue-600 shadow-blue-500/50')}`}>{isActive ? <Pause size={36} fill="currentColor" /> : <Play size={36} className="ml-2" fill="currentColor" />}</button>
+                <button onClick={toggleTimer} title="تشغيل / إيقاف" className={`w-20 h-20 md:w-24 md:h-24 rounded-full flex items-center justify-center shadow-2xl transition-all transform hover:scale-110 active:scale-95 text-white ${isActive ? 'bg-red-500 hover:bg-red-600' : (timerMode === 'work' ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/50' : timerMode === 'shortBreak' ? 'bg-green-500 hover:bg-green-600 shadow-green-500/50' : 'bg-blue-500 hover:bg-blue-600 shadow-blue-500/50')}`}>{isActive ? <Pause size={32} fill="currentColor" /> : <Play size={32} className="ml-2" fill="currentColor" />}</button>
                 <button onClick={() => setShowTimerSettings(!showTimerSettings)} title="الإعدادات" className={`w-14 h-14 rounded-full flex items-center justify-center transition-all border-2 shadow-sm ${darkMode ? 'border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-white' : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-indigo-600'}`}><Settings size={24} className={showTimerSettings ? 'animate-spin-slow' : ''} /></button>
               </div>
 
               {timerMode === 'work' && (
                 <div className="mt-8 w-full max-w-sm z-10 flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2">
-                  <select value={selectedSubjectForTimer} onChange={(e) => { setSelectedSubjectForTimer(e.target.value); setSelectedLectureForTimer(''); }} className={`w-full rounded-2xl px-5 py-3.5 outline-none focus:ring-4 border font-bold shadow-sm transition-all ${darkMode ? 'bg-slate-900 text-white border-slate-600 focus:ring-indigo-500/50' : 'bg-white border-slate-200 focus:ring-indigo-200'}`}>
+                  <select value={selectedSubjectForTimer} onChange={(e) => { setSelectedSubjectForTimer(e.target.value); setSelectedLectureForTimer(''); }} className={`w-full rounded-2xl px-5 py-3 outline-none focus:ring-4 border font-bold shadow-sm transition-all ${darkMode ? 'bg-slate-900 text-white border-slate-600 focus:ring-indigo-500/50' : 'bg-white border-slate-200 focus:ring-indigo-200'}`}>
                     <option value="">-- مذاكرة عامة (بدون تحديد مادة) --</option>
                     {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
@@ -629,7 +640,7 @@ export default function App() {
                   {/* اختيار المحاضرة */}
                   {selectedSubjectForTimer && subjects.find(s => s.id.toString() === selectedSubjectForTimer.toString())?.lectures.length > 0 && (
                     <div className="animate-in fade-in slide-in-from-top-2">
-                      <select value={selectedLectureForTimer} onChange={(e) => setSelectedLectureForTimer(e.target.value)} className={`w-full rounded-2xl px-5 py-3 text-sm font-bold outline-none border transition-all ${darkMode ? 'bg-indigo-900/30 text-indigo-200 border-indigo-700 focus:ring-2 focus:ring-indigo-500' : 'bg-indigo-50 text-indigo-800 border-indigo-200 focus:ring-2 focus:ring-indigo-300'}`}>
+                      <select value={selectedLectureForTimer} onChange={(e) => setSelectedLectureForTimer(e.target.value)} className={`w-full rounded-2xl px-5 py-3 text-sm font-bold outline-none border transition-all ${darkMode ? 'bg-indigo-900/30 text-indigo-300 border-indigo-700 focus:ring-2 focus:ring-indigo-500' : 'bg-indigo-50 text-indigo-800 border-indigo-200 focus:ring-2 focus:ring-indigo-300'}`}>
                         <option value="">-- حدد المحاضرة التي تذاكرها (اختياري) --</option>
                         {subjects.find(s => s.id.toString() === selectedSubjectForTimer.toString()).lectures.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                       </select>
@@ -655,6 +666,7 @@ export default function App() {
                 <h3 className="text-2xl font-black flex items-center gap-3 pb-4 border-b mb-6 dark:border-slate-700"><BarChart className="text-indigo-500" size={28}/> إحصائياتك</h3>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+                  {/* إحصائية عدد الجلسات */}
                   <div className={`col-span-1 sm:col-span-2 p-6 rounded-3xl border flex items-center justify-between shadow-sm hover:shadow-md transition-shadow ${darkMode ? 'bg-gradient-to-r from-orange-900/30 to-orange-800/10 border-orange-500/30' : 'bg-gradient-to-r from-orange-50 to-orange-100/50 border-orange-200'}`}>
                     <div>
                       <span className="block text-sm font-bold mb-1 text-orange-500 uppercase tracking-wide">إجمالي الجلسات (بومودورو)</span>
