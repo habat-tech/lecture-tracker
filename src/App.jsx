@@ -72,6 +72,7 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const syncTimeoutRef = useRef(null);
+  const lectureInputRef = useRef(null);
 
   // Leaderboard/Admin States
   const [usersList, setUsersList] = useState([]);
@@ -373,10 +374,15 @@ export default function App() {
     return { hours: Math.floor(totalSeconds / 3600), minutes: Math.floor((totalSeconds % 3600) / 60), totalSeconds };
   };
 
-  // تعريف المتغيرات للاستخدام في JSX بشكل آمن
+  // تعريف المتغيرات للاستخدام في JSX بشكل آمن وتخزينها لتحسين الأداء
   const activeSubject = subjects.find(s => s.id === activeSubjectId);
-  const myTotalStudy = calculateStudyTime('all');
-  const myRank = getUserRank(myTotalStudy.totalSeconds);
+  const activeSubjectProgress = getProgress(activeSubject);
+  
+  const allStudy = calculateStudyTime('all');
+  const dayStudy = calculateStudyTime('day');
+  const weekStudy = calculateStudyTime('week');
+  const monthStudy = calculateStudyTime('month');
+  const myRank = getUserRank(allStudy.totalSeconds);
 
   const taskDefinitions = [
     { key: 'studied', label: 'ذاكرتها', bgChecked: 'peer-checked:bg-green-600 peer-checked:border-green-600' },
@@ -419,8 +425,8 @@ export default function App() {
     return (
       <div className={`min-h-screen flex flex-col items-center justify-center p-4 ${darkMode ? 'bg-slate-900 text-slate-200' : 'bg-slate-50 text-slate-800'}`} dir="rtl">
         <div className="absolute top-6 left-6 flex gap-2">
-          <button onClick={handleInstallClick} className={`p-3 rounded-full transition-colors ${darkMode ? 'bg-indigo-900/50 text-indigo-300 hover:bg-indigo-800' : 'bg-white text-indigo-600 shadow-md hover:bg-slate-100'}`}><Download size={24} /></button>
-          <button onClick={() => setDarkMode(!darkMode)} className={`p-3 rounded-full transition-colors ${darkMode ? 'bg-slate-800 text-yellow-300' : 'bg-white text-indigo-600 shadow-md'}`}>{darkMode ? <Sun size={24} /> : <Moon size={24} />}</button>
+          <button onClick={handleInstallClick} title="تثبيت التطبيق" className={`p-3 rounded-full transition-colors ${darkMode ? 'bg-indigo-900/50 text-indigo-300 hover:bg-indigo-800' : 'bg-white text-indigo-600 shadow-md hover:bg-slate-100'}`}><Download size={24} /></button>
+          <button onClick={() => setDarkMode(!darkMode)} title="تغيير المظهر" className={`p-3 rounded-full transition-colors ${darkMode ? 'bg-slate-800 text-yellow-300' : 'bg-white text-indigo-600 shadow-md'}`}>{darkMode ? <Sun size={24} /> : <Moon size={24} />}</button>
         </div>
         <div className={`w-full max-w-md p-8 rounded-3xl shadow-xl text-center border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}`}>
           <BookOpen size={48} className="mx-auto mb-6 text-indigo-500" />
@@ -452,24 +458,24 @@ export default function App() {
             </div>
             
             <div className="flex gap-2 bg-black/10 rounded-xl p-1 backdrop-blur-sm">
-              <button onClick={() => setCurrentView('tracker')} className={`p-2 rounded-lg transition ${currentView === 'tracker' ? 'bg-white text-indigo-600' : 'hover:bg-white/20'}`}><List size={18} /></button>
-              <button onClick={() => setCurrentView('pomodoro')} className={`p-2 rounded-lg transition ${currentView === 'pomodoro' ? 'bg-white text-indigo-600' : 'hover:bg-white/20'}`}><Timer size={18} /></button>
-              <button onClick={() => setCurrentView('leaderboard')} className={`p-2 rounded-lg transition ${currentView === 'leaderboard' ? 'bg-amber-400 text-slate-900' : 'hover:bg-white/20'}`}><Trophy size={18} /></button>
-              {isAdmin && <button onClick={() => setCurrentView('admin')} className={`p-2 rounded-lg transition ${currentView === 'admin' ? 'bg-red-500 text-white' : 'hover:bg-white/20'}`}><Shield size={18} /></button>}
+              <button onClick={() => setCurrentView('tracker')} title="المتعقب" className={`p-2 rounded-lg transition ${currentView === 'tracker' ? 'bg-white text-indigo-600' : 'hover:bg-white/20'}`}><List size={18} /></button>
+              <button onClick={() => setCurrentView('pomodoro')} title="المؤقت" className={`p-2 rounded-lg transition ${currentView === 'pomodoro' ? 'bg-white text-indigo-600' : 'hover:bg-white/20'}`}><Timer size={18} /></button>
+              <button onClick={() => setCurrentView('leaderboard')} title="لوحة الشرف" className={`p-2 rounded-lg transition ${currentView === 'leaderboard' ? 'bg-amber-400 text-slate-900' : 'hover:bg-white/20'}`}><Trophy size={18} /></button>
+              {isAdmin && <button onClick={() => setCurrentView('admin')} title="لوحة التحكم" className={`p-2 rounded-lg transition ${currentView === 'admin' ? 'bg-red-500 text-white' : 'hover:bg-white/20'}`}><Shield size={18} /></button>}
             </div>
           </div>
 
           <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-            <button onClick={handleInstallClick} className={`hidden sm:flex p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 hover:bg-slate-600' : 'bg-indigo-800/50 hover:bg-indigo-800'}`}><Download size={18} /></button>
+            <button onClick={handleInstallClick} title="تثبيت التطبيق" className={`hidden sm:flex p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 hover:bg-slate-600' : 'bg-indigo-800/50 hover:bg-indigo-800'}`}><Download size={18} /></button>
             {currentView === 'tracker' && (
               <div className="flex items-center gap-1">
                 <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm ${darkMode ? 'bg-slate-700' : 'bg-indigo-900/30'}`}>
                   {isSyncing ? <><Loader2 size={14} className="animate-spin" /> <span>جاري الحفظ...</span></> : <><Cloud size={14} className="text-green-400" /> <span>تم الحفظ</span></>}
                 </div>
-                <button onClick={forceManualSync} className={`p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 text-green-400' : 'bg-indigo-800/50 text-green-300'}`}><RefreshCw size={18} className={isSyncing ? 'animate-spin' : ''} /></button>
+                <button onClick={forceManualSync} title="تحديث يدوي" className={`p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 text-green-400' : 'bg-indigo-800/50 text-green-300'}`}><RefreshCw size={18} className={isSyncing ? 'animate-spin' : ''} /></button>
               </div>
             )}
-            <button onClick={() => setDarkMode(!darkMode)} className={`p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 text-yellow-300' : 'bg-indigo-800/50 text-indigo-100'}`}>{darkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
+            <button onClick={() => setDarkMode(!darkMode)} title="تغيير المظهر" className={`p-2 rounded-full transition-colors ${darkMode ? 'bg-slate-700 text-yellow-300' : 'bg-indigo-800/50 text-indigo-100'}`}>{darkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
             <div className="h-6 w-px bg-white/20 mx-1"></div>
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 bg-black/20 rounded-full pr-1 pl-3 py-1">
@@ -479,7 +485,7 @@ export default function App() {
                   <span className={`text-[10px] font-bold ${myRank.color}`}>{myRank.icon} {myRank.name}</span>
                 </div>
               </div>
-              <button onClick={handleLogout} className="p-2 rounded-full bg-red-500/20 text-red-200 hover:bg-red-500 transition-colors"><LogOut size={18} /></button>
+              <button onClick={handleLogout} title="تسجيل الخروج" className="p-2 rounded-full bg-red-500/20 text-red-200 hover:bg-red-500 transition-colors"><LogOut size={18} /></button>
             </div>
           </div>
         </div>
@@ -513,9 +519,9 @@ export default function App() {
               </div>
 
               <div className="flex items-center gap-4 z-10">
-                <button onClick={resetTimer} className={`w-14 h-14 rounded-full flex items-center justify-center transition border-2 ${darkMode ? 'border-slate-600 text-slate-400 hover:bg-slate-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}><RotateCcw size={24} /></button>
-                <button onClick={toggleTimer} className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition transform hover:scale-105 ${isActive ? 'bg-red-500 text-white' : (timerMode === 'work' ? 'bg-indigo-600 text-white shadow-indigo-500/50' : timerMode === 'shortBreak' ? 'bg-green-500 text-white shadow-green-500/50' : 'bg-blue-500 text-white shadow-blue-500/50')}`}>{isActive ? <Pause size={32} /> : <Play size={32} className="ml-2" />}</button>
-                <button onClick={() => setShowTimerSettings(!showTimerSettings)} className={`w-14 h-14 rounded-full flex items-center justify-center transition border-2 ${darkMode ? 'border-slate-600 text-slate-400' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}><Settings size={24} /></button>
+                <button onClick={resetTimer} title="إعادة تعيين" className={`w-14 h-14 rounded-full flex items-center justify-center transition border-2 ${darkMode ? 'border-slate-600 text-slate-400 hover:bg-slate-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}><RotateCcw size={24} /></button>
+                <button onClick={toggleTimer} title="تشغيل / إيقاف" className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition transform hover:scale-105 ${isActive ? 'bg-red-500 text-white' : (timerMode === 'work' ? 'bg-indigo-600 text-white shadow-indigo-500/50' : timerMode === 'shortBreak' ? 'bg-green-500 text-white shadow-green-500/50' : 'bg-blue-500 text-white shadow-blue-500/50')}`}>{isActive ? <Pause size={32} /> : <Play size={32} className="ml-2" />}</button>
+                <button onClick={() => setShowTimerSettings(!showTimerSettings)} title="الإعدادات" className={`w-14 h-14 rounded-full flex items-center justify-center transition border-2 ${darkMode ? 'border-slate-600 text-slate-400' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}><Settings size={24} /></button>
               </div>
 
               {timerMode === 'work' && (
@@ -525,7 +531,7 @@ export default function App() {
                     {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                   
-                  {/* اختيار المحاضرة (تم إرجاعها) */}
+                  {/* اختيار المحاضرة */}
                   {selectedSubjectForTimer && subjects.find(s => s.id.toString() === selectedSubjectForTimer.toString())?.lectures.length > 0 && (
                     <div className="animate-in fade-in slide-in-from-top-2">
                       <select value={selectedLectureForTimer} onChange={(e) => setSelectedLectureForTimer(e.target.value)} className={`w-full rounded-xl px-4 py-3 text-sm font-bold outline-none border ${darkMode ? 'bg-indigo-900/30 text-indigo-300 border-indigo-700' : 'bg-indigo-50 text-indigo-800 border-indigo-200'}`}>
@@ -554,7 +560,7 @@ export default function App() {
                 <h3 className="text-xl font-bold flex items-center gap-2 pb-3 border-b mb-6 dark:border-slate-700"><BarChart className="text-indigo-500" size={24}/> إحصائيات المذاكرة والتركيز</h3>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                  {/* إحصائية عدد الجلسات (تم إرجاعها) */}
+                  {/* إحصائية عدد الجلسات */}
                   <div className={`col-span-1 sm:col-span-2 p-5 rounded-2xl border flex items-center justify-between shadow-sm ${darkMode ? 'bg-orange-900/20 border-orange-500/30' : 'bg-orange-50 border-orange-100'}`}>
                     <div>
                       <span className="block text-sm font-bold mb-1 text-orange-500">إجمالي عدد الجلسات (البومودورو)</span>
@@ -564,17 +570,17 @@ export default function App() {
                   </div>
 
                   <div className={`p-5 rounded-2xl border flex items-center justify-between shadow-sm ${darkMode ? 'bg-indigo-900/20 border-indigo-500/30' : 'bg-indigo-50 border-indigo-100'}`}>
-                    <div><span className="block text-sm font-bold mb-1 text-indigo-500">مذاكرة اليوم</span><span className="text-2xl font-black">{calculateStudyTime('day').hours} <span className="text-sm font-medium">س</span> و {calculateStudyTime('day').minutes} <span className="text-sm font-medium">د</span></span></div>
+                    <div><span className="block text-sm font-bold mb-1 text-indigo-500">مذاكرة اليوم</span><span className="text-2xl font-black">{dayStudy.hours} <span className="text-sm font-medium">س</span> و {dayStudy.minutes} <span className="text-sm font-medium">د</span></span></div>
                     <Clock className="text-indigo-500 drop-shadow-md" size={32} />
                   </div>
                   
                   <div className={`p-5 rounded-2xl border flex items-center justify-between shadow-sm ${darkMode ? 'bg-green-900/20 border-green-500/30' : 'bg-green-50 border-green-100'}`}>
-                    <div><span className="block text-sm font-bold mb-1 text-green-500">هذا الأسبوع</span><span className="text-2xl font-black">{calculateStudyTime('week').hours} <span className="text-sm font-medium">س</span> و {calculateStudyTime('week').minutes} <span className="text-sm font-medium">د</span></span></div>
+                    <div><span className="block text-sm font-bold mb-1 text-green-500">هذا الأسبوع</span><span className="text-2xl font-black">{weekStudy.hours} <span className="text-sm font-medium">س</span> و {weekStudy.minutes} <span className="text-sm font-medium">د</span></span></div>
                     <Calendar className="text-green-500 drop-shadow-md" size={32} />
                   </div>
                   
                   <div className={`col-span-1 sm:col-span-2 p-5 rounded-2xl border flex items-center justify-between shadow-sm ${darkMode ? 'bg-purple-900/20 border-purple-500/30' : 'bg-purple-50 border-purple-100'}`}>
-                    <div><span className="block text-sm font-bold mb-1 text-purple-500">حصاد هذا الشهر</span><span className="text-2xl font-black">{calculateStudyTime('month').hours} <span className="text-sm font-medium">ساعة</span> و {calculateStudyTime('month').minutes} <span className="text-sm font-medium">دقيقة</span></span></div>
+                    <div><span className="block text-sm font-bold mb-1 text-purple-500">حصاد هذا الشهر</span><span className="text-2xl font-black">{monthStudy.hours} <span className="text-sm font-medium">ساعة</span> و {monthStudy.minutes} <span className="text-sm font-medium">دقيقة</span></span></div>
                     <BarChart className="text-purple-500 drop-shadow-md" size={32} />
                   </div>
                 </div>
@@ -674,8 +680,8 @@ export default function App() {
                           <td className="p-4 flex items-center gap-3"><img src={u.photoURL || 'https://via.placeholder.com/150'} alt="Avatar" className="w-8 h-8 rounded-full" /><span className="font-bold">{u.name}</span></td>
                           <td className="p-4">{isSuper ? 'مالك' : isAdm ? 'أدمن' : 'مستخدم'}</td>
                           <td className="p-4 flex justify-center gap-2">
-                            <button onClick={() => toggleAdminRole(u.id, u.role, u.email)} className="p-2 rounded-lg bg-indigo-100 text-indigo-600"><UserCheck size={18} /></button>
-                            <button onClick={() => adminDeleteUser(u.id, u.name, u.email)} className="p-2 rounded-lg bg-red-100 text-red-600"><Trash size={18} /></button>
+                            <button onClick={() => toggleAdminRole(u.id, u.role, u.email)} title="تبديل الصلاحيات" className="p-2 rounded-lg bg-indigo-100 text-indigo-600 hover:bg-indigo-200"><UserCheck size={18} /></button>
+                            <button onClick={() => adminDeleteUser(u.id, u.name, u.email)} title="حذف المستخدم" className="p-2 rounded-lg bg-red-100 text-red-600 hover:bg-red-200"><Trash size={18} /></button>
                           </td>
                         </tr>
                       )})}
@@ -695,7 +701,7 @@ export default function App() {
             <h2 className={`text-lg font-bold mb-4 flex items-center gap-2 border-b pb-3 ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}><List size={20} className="text-indigo-500"/> المواد الدراسية</h2>
             <form onSubmit={addSubject} className="mb-4 flex gap-2">
               <input type="text" placeholder="اسم المادة..." className={`flex-1 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 border ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-slate-300'}`} value={newSubjectName} onChange={(e) => setNewSubjectName(e.target.value)} />
-              <button type="submit" className="bg-indigo-600 text-white p-2 rounded-xl hover:bg-indigo-700 transition"><Plus size={20} /></button>
+              <button type="submit" title="إضافة مادة" className="bg-indigo-600 text-white p-2 rounded-xl hover:bg-indigo-700 transition"><Plus size={20} /></button>
             </form>
             <ul className="space-y-2 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
               {subjects.map(subject => (
@@ -703,8 +709,8 @@ export default function App() {
                   {editingSubjectId === subject.id ? (
                     <div className={`flex items-center gap-2 p-2 rounded-xl border ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-indigo-50 border-indigo-200'}`}>
                       <input type="text" className={`flex-1 rounded px-2 py-1 text-sm outline-none ${darkMode ? 'bg-slate-600 text-white' : 'bg-white'}`} value={editingSubjectName} onChange={(e) => setEditingSubjectName(e.target.value)} autoFocus />
-                      <button onClick={() => saveEditSubject(subject.id)} className="text-green-500"><Save size={18} /></button>
-                      <button onClick={() => setEditingSubjectId(null)} className="text-slate-400"><X size={18} /></button>
+                      <button onClick={() => saveEditSubject(subject.id)} title="حفظ" className="text-green-500"><Save size={18} /></button>
+                      <button onClick={() => setEditingSubjectId(null)} title="إلغاء" className="text-slate-400"><X size={18} /></button>
                     </div>
                   ) : (
                     <div className={`flex items-center justify-between transition-all rounded-xl overflow-hidden border ${activeSubjectId === subject.id ? (darkMode ? 'border-indigo-500/50 bg-indigo-900/30' : 'border-indigo-200 bg-indigo-50/50') : (darkMode ? 'border-transparent hover:border-slate-600 hover:bg-slate-700' : 'border-transparent hover:border-slate-200 hover:bg-slate-50')}`}>
@@ -716,8 +722,8 @@ export default function App() {
                         </div>
                       </button>
                       <div className="flex items-center gap-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => { setEditingSubjectId(subject.id); setEditingSubjectName(subject.name); }} className="p-1.5 text-slate-400 hover:text-indigo-500"><Pencil size={14} /></button>
-                        <button onClick={() => deleteSubject(subject.id)} className="p-1.5 text-slate-400 hover:text-red-500"><Trash size={14} /></button>
+                        <button onClick={() => { setEditingSubjectId(subject.id); setEditingSubjectName(subject.name); }} title="تعديل المادة" className="p-1.5 text-slate-400 hover:text-indigo-500"><Pencil size={14} /></button>
+                        <button onClick={() => deleteSubject(subject.id)} title="حذف المادة" className="p-1.5 text-slate-400 hover:text-red-500"><Trash size={14} /></button>
                       </div>
                     </div>
                   )}
@@ -737,17 +743,17 @@ export default function App() {
                     <div className="w-full md:w-1/2">
                       <h2 className="text-2xl md:text-3xl font-bold mb-3">{activeSubject.name}</h2>
                       <div className={`w-full rounded-full h-3 mb-2 overflow-hidden border ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-100 border-slate-200'}`}>
-                        <div className="bg-gradient-to-l from-indigo-500 to-purple-500 h-full rounded-full transition-all duration-1000" style={{ width: `${getProgress(activeSubject)}%` }}></div>
+                        <div className={`h-full rounded-full transition-all duration-1000 bg-gradient-to-l ${activeSubjectProgress === 100 ? 'from-green-400 to-green-600 shadow-[0_0_10px_rgba(74,222,128,0.5)]' : 'from-indigo-500 to-purple-500'}`} style={{ width: `${activeSubjectProgress}%` }}></div>
                       </div>
                       <div className={`flex gap-4 text-xs font-medium ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                        <span className="flex items-center gap-1"><CheckCircle size={14} className="text-green-500"/> إنجاز المادة: {getProgress(activeSubject)}%</span>
+                        <span className="flex items-center gap-1"><CheckCircle size={14} className="text-green-500"/> إنجاز المادة: {activeSubjectProgress}%</span>
                         <span className="flex items-center gap-1"><BookOpen size={14} className={darkMode ? 'text-indigo-400' : 'text-indigo-500'}/> المحاضرات: {activeSubject.lectures.length}</span>
                       </div>
                     </div>
                     <div className="flex flex-col sm:flex-row w-full md:w-auto gap-2 shrink-0">
                       <form onSubmit={addLecture} className="flex flex-1 sm:flex-none gap-2">
-                        <textarea rows={1} placeholder="الصق المحاضرات..." className={`flex-1 sm:w-48 lg:w-64 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 resize-none overflow-hidden ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-slate-300'}`} value={newLectureName} onChange={(e) => setNewLectureName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addLecture(e); } }} />
-                        <button type="submit" className="bg-green-600 text-white px-5 py-2 rounded-xl hover:bg-green-700"><Plus size={18} /></button>
+                        <textarea ref={lectureInputRef} rows={1} placeholder="اسم المحاضرة..." className={`flex-1 sm:w-48 lg:w-64 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 resize-none overflow-hidden ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-slate-300'}`} value={newLectureName} onChange={(e) => setNewLectureName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addLecture(e); } }} />
+                        <button type="submit" title="إضافة محاضرة" className="bg-green-600 text-white px-5 py-2 rounded-xl hover:bg-green-700"><Plus size={18} /></button>
                       </form>
                     </div>
                   </div>
@@ -766,15 +772,15 @@ export default function App() {
                               {editingLectureId === lecture.id ? (
                                 <div className="flex items-center gap-2 w-full">
                                   <input type="text" className={`flex-1 rounded-lg px-2 py-1 text-sm outline-none border ${darkMode ? 'bg-slate-700 text-white border-slate-500' : 'bg-white border-indigo-300'}`} value={editingLectureName} onChange={(e) => setEditingLectureName(e.target.value)} autoFocus />
-                                  <button onClick={() => saveEditLecture(activeSubject.id, lecture.id)} className="text-green-500 p-1"><Save size={18} /></button>
-                                  <button onClick={() => setEditingLectureId(null)} className="text-slate-400 p-1"><X size={18} /></button>
+                                  <button onClick={() => saveEditLecture(activeSubject.id, lecture.id)} title="حفظ" className="text-green-500 p-1"><Save size={18} /></button>
+                                  <button onClick={() => setEditingLectureId(null)} title="إلغاء" className="text-slate-400 p-1"><X size={18} /></button>
                                 </div>
                               ) : (
                                 <>
                                   <h3 className={`font-bold text-lg pr-1 ${isDone ? 'line-through opacity-50' : ''}`}>{lecture.name}</h3>
                                   <div className={`flex gap-1 rounded-lg p-1 border shrink-0 ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
-                                    <button onClick={() => { setEditingLectureId(lecture.id); setEditingLectureName(lecture.name); }} className="p-1.5 text-slate-400 hover:text-indigo-500"><Pencil size={14} /></button>
-                                    <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className="p-1.5 text-slate-400 hover:text-red-500"><Trash size={14} /></button>
+                                    <button onClick={() => { setEditingLectureId(lecture.id); setEditingLectureName(lecture.name); }} title="تعديل المحاضرة" className="p-1.5 text-slate-400 hover:text-indigo-500"><Pencil size={14} /></button>
+                                    <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} title="حذف المحاضرة" className="p-1.5 text-slate-400 hover:text-red-500"><Trash size={14} /></button>
                                   </div>
                                 </>
                               )}
@@ -795,9 +801,9 @@ export default function App() {
                             <div className={`flex items-center justify-between p-3 rounded-xl border ${darkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-slate-50 border-slate-100'}`}>
                               <span className="text-sm font-semibold flex items-center gap-2"><Clock size={16}/> المراجعات</span>
                               <div className="flex items-center gap-3">
-                                <button onClick={() => updateReviewCount(activeSubject.id, lecture.id, false)} className={`w-7 h-7 rounded-lg border flex items-center justify-center ${darkMode ? 'bg-slate-600 border-slate-500 text-slate-300' : 'bg-white shadow-sm text-slate-600'}`}>-</button>
+                                <button onClick={() => updateReviewCount(activeSubject.id, lecture.id, false)} title="تقليل المراجعات" className={`w-7 h-7 rounded-lg border flex items-center justify-center ${darkMode ? 'bg-slate-600 border-slate-500 text-slate-300' : 'bg-white shadow-sm text-slate-600'}`}>-</button>
                                 <span className={`w-4 text-center font-bold ${darkMode ? 'text-indigo-400' : 'text-indigo-700'}`}>{lecture.reviewCount}</span>
-                                <button onClick={() => updateReviewCount(activeSubject.id, lecture.id, true)} className={`w-7 h-7 rounded-lg flex items-center justify-center ${darkMode ? 'bg-indigo-900/50 text-indigo-300' : 'bg-indigo-100 text-indigo-700'}`}>+</button>
+                                <button onClick={() => updateReviewCount(activeSubject.id, lecture.id, true)} title="زيادة المراجعات" className={`w-7 h-7 rounded-lg flex items-center justify-center ${darkMode ? 'bg-indigo-900/50 text-indigo-300' : 'bg-indigo-100 text-indigo-700'}`}>+</button>
                               </div>
                             </div>
                           </div>
@@ -826,8 +832,8 @@ export default function App() {
                                     {editingLectureId === lecture.id ? (
                                       <div className="flex items-center gap-2">
                                         <input type="text" className={`flex-1 rounded px-2 py-1 text-sm outline-none border ${darkMode ? 'bg-slate-700 text-white border-slate-500' : 'bg-white border-indigo-300'}`} value={editingLectureName} onChange={(e) => setEditingLectureName(e.target.value)} autoFocus />
-                                        <button onClick={() => saveEditLecture(activeSubject.id, lecture.id)} className="text-green-500"><Save size={16} /></button>
-                                        <button onClick={() => setEditingLectureId(null)} className="text-slate-400"><X size={16} /></button>
+                                        <button onClick={() => saveEditLecture(activeSubject.id, lecture.id)} title="حفظ" className="text-green-500"><Save size={16} /></button>
+                                        <button onClick={() => setEditingLectureId(null)} title="إلغاء" className="text-slate-400"><X size={16} /></button>
                                       </div>
                                     ) : (
                                       <div className="flex items-center gap-2">
@@ -848,15 +854,15 @@ export default function App() {
                                   ))}
                                   <td className="p-3">
                                     <div className={`flex items-center justify-center gap-2 rounded-full p-1 ${darkMode ? 'bg-slate-700' : 'bg-slate-100'}`}>
-                                      <button onClick={() => updateReviewCount(activeSubject.id, lecture.id, true)} className={`w-6 h-6 rounded-full flex items-center justify-center text-lg leading-none ${darkMode ? 'bg-slate-600 text-indigo-400' : 'bg-white shadow-sm text-indigo-600'}`}>+</button>
+                                      <button onClick={() => updateReviewCount(activeSubject.id, lecture.id, true)} title="زيادة المراجعات" className={`w-6 h-6 rounded-full flex items-center justify-center text-lg leading-none ${darkMode ? 'bg-slate-600 text-indigo-400' : 'bg-white shadow-sm text-indigo-600'}`}>+</button>
                                       <span className={`w-4 text-center font-bold text-sm ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{lecture.reviewCount}</span>
-                                      <button onClick={() => updateReviewCount(activeSubject.id, lecture.id, false)} className={`w-6 h-6 rounded-full flex items-center justify-center text-lg leading-none ${darkMode ? 'bg-slate-600 text-slate-300' : 'bg-white shadow-sm text-slate-500'}`}>-</button>
+                                      <button onClick={() => updateReviewCount(activeSubject.id, lecture.id, false)} title="تقليل المراجعات" className={`w-6 h-6 rounded-full flex items-center justify-center text-lg leading-none ${darkMode ? 'bg-slate-600 text-slate-300' : 'bg-white shadow-sm text-slate-500'}`}>-</button>
                                     </div>
                                   </td>
                                   <td className="p-3">
                                     <div className="flex items-center justify-center gap-2">
-                                      <button onClick={() => { setEditingLectureId(lecture.id); setEditingLectureName(lecture.name); }} className={`p-1.5 rounded-lg ${darkMode ? 'text-slate-400 hover:text-indigo-400' : 'text-slate-400 hover:text-indigo-600'}`}><Pencil size={16} /></button>
-                                      <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} className={`p-1.5 rounded-lg ${darkMode ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-600'}`}><Trash size={16} /></button>
+                                      <button onClick={() => { setEditingLectureId(lecture.id); setEditingLectureName(lecture.name); }} title="تعديل المحاضرة" className={`p-1.5 rounded-lg ${darkMode ? 'text-slate-400 hover:text-indigo-400' : 'text-slate-400 hover:text-indigo-600'}`}><Pencil size={16} /></button>
+                                      <button onClick={() => deleteLecture(activeSubject.id, lecture.id)} title="حذف المحاضرة" className={`p-1.5 rounded-lg ${darkMode ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-600'}`}><Trash size={16} /></button>
                                     </div>
                                   </td>
                                 </tr>
@@ -872,6 +878,7 @@ export default function App() {
                     <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${darkMode ? 'bg-indigo-900/30' : 'bg-indigo-50'}`}><BookOpen size={32} className={darkMode ? 'text-indigo-400' : 'text-indigo-300'} /></div>
                     <h3 className="text-lg font-bold mb-1">لا توجد محاضرات هنا</h3>
                     <p className="text-sm mb-6 max-w-sm mx-auto opacity-70">ابدأ بإضافة المحاضرات المتراكمة لتتمكن من تنظيم مهامك ومتابعة تقدمك.</p>
+                    <button onClick={() => lectureInputRef.current?.focus()} className={`px-6 py-2 rounded-xl font-medium transition ${darkMode ? 'bg-indigo-900/50 text-indigo-300 hover:bg-indigo-800/80' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}>إضافة أول محاضرة</button>
                   </div>
                 )}
               </div>
